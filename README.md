@@ -38,6 +38,8 @@ class for more complex logic-processing classes.
 * `LogicMerger` - This is given pointers to several input FIFOs and polls
 them for pending events, providing the logical-AND or logical-OR of its
 inputs. This encapsulates logic for merging multiple sorted event lists.
+Polling also means we don't need input buffers (we use the upstream output
+buffers instead).
 * `ConditionProcessor` - This looks at an input TTL signal for trigger
 events and asserts an output when a trigger event is seen. The input and
 output configurations are flexible (encapsulated by the `ConditionConfig`
