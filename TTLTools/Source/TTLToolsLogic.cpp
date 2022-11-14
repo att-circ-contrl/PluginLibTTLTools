@@ -97,30 +97,36 @@ void LogicFIFO::resetState()
 {
     pendingOutputTimes.clear();
     pendingOutputLevels.clear();
-    prevAcknowledgedOutput = false;
+    pendingOutputTags.clear();
+
+    // FIXME - Bogus timestamp!
+    prevAcknowledgedTime = -1;
+    prevAcknowledgedLevel = false;
+    prevAcknowledgedTag = 0;
 }
 
 
 // This overwrites our record of the previous input levels without causing an event update.
 // This is used for initialization.
-void LogicFIFO::resetInput(int64 resetTime, bool newInput)
+void LogicFIFO::resetInput(int64 resetTime, bool newInput, int newTag)
 {
     prevInputTime = resetTime;
     prevInputLevel = newInput;
+    prevInputTag = newTag;
 }
 
 
 // Input processing. For the FIFO, input events are just copied to the output.
-void LogicFIFO::handleInput(int64 inputTime, bool inputLevel)
+void LogicFIFO::handleInput(int64 inputTime, bool inputLevel, int inputTag)
 {
 // FIXME - Diagnostics. Spammy!
-//L_PRINT("FIFO got input " << (inputLevel ? 1 : 0) << " at time " << inputTime << ".");
+L_PRINT("FIFO got input " << (inputLevel ? 1 : 0) << " with tag " << inputTag << " at time " << inputTime << ".");
 
     // Update the "last input seen" record.
-    resetInput(inputTime, inputLevel);
+    resetInput(inputTime, inputLevel, inputTag);
 
     // Copy this event to the output buffer.
-    enqueueOutput(inputTime, inputLevel);
+    enqueueOutput(inputTime, inputLevel, inputTag);
 }
 
 
@@ -153,28 +159,62 @@ bool LogicFIFO::getNextOutputLevel()
 }
 
 
+int LogicFIFO::getNextOutputTag()
+{
+    // NOTE - This will return a safe value (0) if we don't have output.
+    return pendingOutputTags.snoop();
+}
+
+
 // This removes the next queued output event, after we've read it.
 void LogicFIFO::acknowledgeOutput()
 {
     // Save whatever the last output was.
-    // This will return a safe value (false) if we don't have pending output.
-    prevAcknowledgedOutput = pendingOutputLevels.snoop();
+    // These will return safe values (0 or false) if we don't have pending output.
+    prevAcknowledgedTime = pendingOutputTimes.snoop();
+    prevAcknowledgedLevel = pendingOutputLevels.snoop();
+    prevAcknowledgedTag = pendingOutputTags.snoop();
 
     // Discard return values.
     pendingOutputTimes.dequeue();
     pendingOutputLevels.dequeue();
+    pendingOutputTags.dequeue();
 }
 
 
-bool LogicFIFO::getLastInput()
+int64 LogicFIFO::getLastInputTime()
+{
+    return prevInputTime;
+}
+
+
+bool LogicFIFO::getLastInputLevel()
 {
     return prevInputLevel;
 }
 
 
-bool LogicFIFO::getLastAcknowledgedOutput()
+int LogicFIFO::getLastInputTag()
 {
-    return prevAcknowledgedOutput;
+    return prevInputTag;
+}
+
+
+int64 LogicFIFO::getLastAcknowledgedTime()
+{
+    return prevAcknowledgedTime;
+}
+
+
+bool LogicFIFO::getLastAcknowledgedLevel()
+{
+    return prevAcknowledgedLevel;
+}
+
+
+int LogicFIFO::getLastAcknowledgedTag()
+{
+    return prevAcknowledgedTag;
 }
 
 
@@ -189,10 +229,15 @@ LogicFIFO* LogicFIFO::getCopyByValue()
 
     result->pendingOutputTimes = pendingOutputTimes;
     result->pendingOutputLevels = pendingOutputLevels;
+    result->pendingOutputTags = pendingOutputTags;
 
     result->prevInputTime = prevInputTime;
     result->prevInputLevel = prevInputLevel;
-    result->prevAcknowledgedOutput = prevAcknowledgedOutput;
+    result->prevInputTag = prevInputTag;
+
+    result->prevAcknowledgedTime = prevAcknowledgedTime;
+    result->prevAcknowledgedLevel = prevAcknowledgedLevel;
+    result->prevAcknowledgedTag = prevAcknowledgedTag;
 
     return result;
 }
@@ -200,10 +245,11 @@ LogicFIFO* LogicFIFO::getCopyByValue()
 
 // Protected accessors.
 
-void LogicFIFO::enqueueOutput(int64 newTime, bool newLevel)
+void LogicFIFO::enqueueOutput(int64 newTime, bool newLevel, int newTag)
 {
     pendingOutputTimes.enqueue(newTime);
     pendingOutputLevels.enqueue(newLevel);
+    pendingOutputTags.enqueue(newTag);
 }
 
 
@@ -247,12 +293,13 @@ void ConditionProcessor::resetState()
     LogicFIFO::resetState();
 
     // Adjust idle output to reflect configuration.
-    prevAcknowledgedOutput = !(config.outputActiveHigh);
+    prevAcknowledgedLevel = !(config.outputActiveHigh);
 }
 
 
 // Input processing. This schedules future output in response to input events.
-void ConditionProcessor::handleInput(int64 inputTime, bool inputLevel)
+// NOTE - This strips tags, since there isn't a 1:1 mapping between input and output events.
+void ConditionProcessor::handleInput(int64 inputTime, bool inputLevel, int inputTag)
 {
 // FIXME - Diagnostics. Spammy!
 //L_PRINT("CondProc got input " << (inputLevel ? 1 : 0) << " at time " << inputTime << ".");
@@ -260,7 +307,7 @@ void ConditionProcessor::handleInput(int64 inputTime, bool inputLevel)
 #if LOGICDEBUG_BYPASSCONDITION
     // Just be a FIFO for testing purposes.
     if (inputLevel != prevInputLevel)
-        enqueueOutput(inputTime, inputLevel);
+        enqueueOutput(inputTime, inputLevel, 0);
 #else
 
     // FIXME - handleInput NYI.
@@ -268,7 +315,7 @@ void ConditionProcessor::handleInput(int64 inputTime, bool inputLevel)
 #endif
 
     // Update the "last input seen" record.
-    resetInput(inputTime, inputLevel);
+    resetInput(inputTime, inputLevel, inputTag);
 }
 
 
@@ -277,22 +324,25 @@ void ConditionProcessor::advanceToTime(int64 newTime)
 {
     // Add a dummy input event so that we generate output events up to the desired time.
     if (newTime > prevInputTime)
-        handleInput(newTime, prevInputLevel);
+        handleInput(newTime, prevInputLevel, prevInputTag);
 }
 
 
 
 //
-// Merging of multiple condition processor outputs.
+// Merging of multiple condition processor outputs - Base class.
 
 // This works by pulling, to avoid needing input buffers.
+// The base class implements features shared by the multiplexer and the logical merger.
 
 
 // Constructor.
-LogicMerger::LogicMerger()
+MergerBase::MergerBase()
 {
-    mergeMode = mergeAnd;
     clearInputList();
+
+    // Negative timestamps might exist, but we have to initialize to something.
+    earliestTime = -1;
 
     // We have no inputs yet, so there's no need to call resetState() here.
     // The parent constructor already reset output state, and virtual tables aren't yet initialized.
@@ -301,25 +351,21 @@ LogicMerger::LogicMerger()
 
 // Accessors.
 
-void LogicMerger::clearInputList()
+void MergerBase::clearInputList()
 {
     inputList.clear();
+    inputTags.clear();
 }
 
 
-void LogicMerger::addInput(LogicFIFO* newInput)
+void MergerBase::addInput(LogicFIFO* newInput, int idTag)
 {
     inputList.add(newInput);
+    inputTags.add(idTag);
 }
 
 
-void LogicMerger::setMergeMode(LogicMerger::MergerType newMode)
-{
-    mergeMode = newMode;
-}
-
-
-void LogicMerger::resetState()
+void MergerBase::resetState()
 {
     LogicFIFO::resetState();
 
@@ -329,49 +375,143 @@ void LogicMerger::resetState()
 }
 
 
+// This finds the earliest timestamp in the still-pending input, and acknowledges all input up to that point. It returns false if there's no input.
+bool MergerBase::advanceToNextTime()
+{
+    bool hadInput;
+
+    // Identify the oldest pending timestamp.
+    hadInput = false;
+    for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
+        if (NULL != inputList[inIdx])
+            if (inputList[inIdx]->hasPendingOutput())
+            {
+                int64 thisTime = inputList[inIdx]->getNextOutputTime();
+                if ((!hadInput) || (thisTime < earliestTime))
+                    earliestTime = thisTime;
+                hadInput = true;
+            }
+
+    // Acknowledge events that match the earliest timestamp.
+    // NOTE - Tolerate the case where a single source has several pending inputs with that timestamp.
+    if (hadInput)
+        for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
+            if (NULL != inputList[inIdx])
+            {
+                bool wasEarly = true;
+                while ( wasEarly && (inputList[inIdx]->hasPendingOutput()) )
+                    if (inputList[inIdx]->getNextOutputTime() <= earliestTime)
+                        inputList[inIdx]->acknowledgeOutput();
+                    else
+                        wasEarly = false;
+            }
+
+    // Done.
+    return hadInput;
+}
+
+
+int64 MergerBase::getCurrentInputTime()
+{
+    return earliestTime;
+}
+
+
+
+//
+// Merging of multiple condition processor outputs - Multiplexer.
+
+// This works by pulling, to avoid needing input buffers.
+// This is a multiplexer, combining several input streams into an in-order output stream with input identification tags.
+// Output events are tagged with the input stream's ID tag (input event tags are discarded).
+
+
+// Constructor.
+MuxMerger::MuxMerger()
+{
+    // Nothing more to do. The base class constructor handled everything.
+}
+
+
+// Accessors.
+
+void MuxMerger::processPendingInput()
+{
+    bool hadInput;
+    int64 currentTime, thisTime;
+
+    // Scan over all inputs, pick the oldest, and process it.
+    do
+    {
+        // Advance to the oldest still-pending timestamp and acknowledge input to that point.
+        hadInput = advanceToNextTime();
+
+        // If we had inputs, emit output events corresponding to the input events that just happened.
+        if (hadInput)
+        {
+            currentTime = getCurrentInputTime();
+            for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
+                if (NULL != inputList[inIdx])
+                {
+                    int64 thisTime = inputList[inIdx]->getLastAcknowledgedTime();
+                    if (thisTime == currentTime)
+                    {
+                        bool thisLevel = inputList[inIdx]->getLastAcknowledgedLevel();
+                        enqueueOutput(thisTime, thisLevel, inputTags[inIdx]);
+                    }
+                }
+        }
+    }
+    while (hadInput);
+}
+
+
+
+//
+// Merging of multiple condition processor outputs - Logical merger.
+
+// This works by pulling, to avoid needing input buffers.
+// This performs a boolean AND or OR operation on its inputs, returning a single output.
+// We're stripping input tags, since there isn't a 1:1 relation between input and output events.
+
+
+// Constructor.
+LogicMerger::LogicMerger()
+{
+    mergeMode = mergeAnd;
+
+    // The parent constructor already initialized everything else.
+}
+
+
+// Accessors.
+
+void LogicMerger::setMergeMode(LogicMerger::MergerType newMode)
+{
+    mergeMode = newMode;
+}
+
+
 void LogicMerger::processPendingInput()
 {
-    int64 earliestTime;
     bool hadInput;
     bool thisOutput;
 
     // Scan over all inputs, pick the oldest, and process it.
     do
     {
-        // Identify the oldest pending timestamp.
-        hadInput = false;
-        earliestTime = -1;
-        for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
-            if (NULL != inputList[inIdx])
-                if (inputList[inIdx]->hasPendingOutput())
-                {
-                    int64 thisTime = inputList[inIdx]->getNextOutputTime();
-                    if ((!hadInput) || (thisTime < earliestTime))
-                        earliestTime = thisTime;
-                    hadInput = true;
-                }
+        // Advance to the oldest still-pending timestamp and acknowledge input to that point.
+        hadInput = advanceToNextTime();
 
+        // If we had input events, build a new output event based on the last acknowledged inputs.
         if (hadInput)
         {
-            // Acknowledge events that match the earliest timestamp.
-            // NOTE - Tolerate the case where a single source has several pending inputs with that timestamp.
-            for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
-                if (NULL != inputList[inIdx])
-                {
-                    bool wasEarly = true;
-                    while ( wasEarly && (inputList[inIdx]->hasPendingOutput()) )
-                        if (inputList[inIdx]->getNextOutputTime() <= earliestTime)
-                            inputList[inIdx]->acknowledgeOutput();
-                        else
-                            wasEarly = false;
-                }
-
             // Get the logical-AND or logical-OR of all acknowledged outputs.
             thisOutput = (mergeMode == mergeAnd);
             for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
                 if (NULL != inputList[inIdx])
                 {
-                    bool thisLevel = inputList[inIdx]->getLastAcknowledgedOutput();
+                    bool thisLevel = inputList[inIdx]->getLastAcknowledgedLevel();
                     switch (mergeMode)
                     {
                     case mergeAnd:
@@ -386,7 +526,8 @@ void LogicMerger::processPendingInput()
                 }
 
             // Emit this output.
-            enqueueOutput(earliestTime, thisOutput);
+            // FIXME - We're not checking to see if output actually _changed_, here.
+            enqueueOutput(earliestTime, thisOutput, 0);
         }
     }
     while (hadInput);

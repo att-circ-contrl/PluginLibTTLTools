@@ -57,17 +57,23 @@ namespace TTLTools
 
 		virtual void resetState();
 
-		virtual void resetInput(int64 resetTime, bool newInput);
-		virtual void handleInput(int64 inputTime, bool inputLevel);
+		virtual void resetInput(int64 resetTime, bool newInput, int newTag = 0);
+		virtual void handleInput(int64 inputTime, bool inputLevel, int inputTag = 0);
 		virtual void advanceToTime(int64 newTime);
 
 		bool hasPendingOutput();
 		int64 getNextOutputTime();
 		bool getNextOutputLevel();
+		int getNextOutputTag();
 		void acknowledgeOutput();
 
-		bool getLastInput();
-		bool getLastAcknowledgedOutput();
+		int64 getLastInputTime();
+		bool getLastInputLevel();
+		int getLastInputTag();
+
+		int64 getLastAcknowledgedTime();
+		bool getLastAcknowledgedLevel();
+		int getLastAcknowledgedTag();
 
 		// Copy-by-value accessor. This is used for splitting output.
 		LogicFIFO* getCopyByValue();
@@ -75,16 +81,22 @@ namespace TTLTools
 	protected:
 		CircBuf<int64,TTLTOOLSLOGIC_EVENT_BUF_SIZE> pendingOutputTimes;
 		CircBuf<bool,TTLTOOLSLOGIC_EVENT_BUF_SIZE> pendingOutputLevels;
+		CircBuf<int,TTLTOOLSLOGIC_EVENT_BUF_SIZE> pendingOutputTags;
 
 		int64 prevInputTime;
 		bool prevInputLevel;
-		bool prevAcknowledgedOutput;
+		int prevInputTag;
 
-		void enqueueOutput(int64 newTime, bool newLevel);
+		bool prevAcknowledgedTime;
+		bool prevAcknowledgedLevel;
+		int prevAcknowledgedTag;
+
+		void enqueueOutput(int64 newTime, bool newLevel, int newTag);
 	};
 
 
 	// Condition processing for one TTL signal.
+	// NOTE - This strips tags, since there isn't a 1:1 mapping between input and output events.
 	class COMMON_LIB ConditionProcessor : public LogicFIFO
 	{
 	public:
@@ -98,7 +110,7 @@ namespace TTLTools
 		ConditionConfig getConfig();
 
 		void resetState() override;
-		void handleInput(int64 inputTime, bool inputLevel) override;
+		void handleInput(int64 inputTime, bool inputLevel, int inputTag = 0) override;
 		void advanceToTime(int64 newTime) override;
 
 	protected:
@@ -108,7 +120,59 @@ namespace TTLTools
 
 	// Merging of multiple condition outputs.
 	// This works by pulling, to avoid needing input buffers.
-	class COMMON_LIB LogicMerger : public LogicFIFO
+	// The base class implements features shared by the multiplexer and the logical merger.
+	class COMMON_LIB MergerBase : public LogicFIFO
+	{
+	public:
+		// Constructor.
+		MergerBase();
+		// Default destructor is fine.
+
+		// Accessors.
+		// NOTE - Do not call the LogicFIFO input accessors. Call advanceToNextTime() instead.
+
+		void clearInputList();
+		// Whether id tags are used as event tags is up to the child class.
+		void addInput(LogicFIFO* newInput, int idTag = 0);
+
+		void resetState() override;
+
+		// This finds the earliest timestamp in the still-pending input, and acknowledges all input up to that point. It returns false if there's no input.
+		bool advanceToNextTime();
+		int64 getCurrentInputTime();
+
+	protected:
+		Array<LogicFIFO*> inputList;
+		Array<int> inputTags;
+		int64 earliestTime;
+	};
+
+
+	// Merging of multiple condition outputs.
+	// This works by pulling, to avoid needing input buffers.
+	// This is a multiplexer, combining several input streams into an in-order output stream.
+	// Output events are tagged with the input stream's ID tag (input event tags are discarded).
+	class COMMON_LIB MuxMerger : public MergerBase
+	{
+	public:
+		// Constructor.
+		MuxMerger();
+		// Default destructor is fine.
+
+		// Accessors.
+		// NOTE - Do not call the LogicFIFO input accessors. Call processPendingInput() instead.
+
+		void processPendingInput();
+
+	protected:
+	};
+
+
+	// Merging of multiple condition outputs.
+	// This works by pulling, to avoid needing input buffers.
+	// This performs a boolean AND or OR operation on its inputs, returning a single output.
+	// We're stripping input tags, since there isn't a 1:1 relation between input and output events.
+	class COMMON_LIB LogicMerger : public MergerBase
 	{
 	public:
 		enum MergerType
@@ -124,16 +188,10 @@ namespace TTLTools
 		// Accessors.
 		// NOTE - Do not call the LogicFIFO input accessors. Call processPendingInput() instead.
 
-		void clearInputList();
-		void addInput(LogicFIFO* newInput);
-
 		void setMergeMode(MergerType newMode);
-
-		void resetState() override;
 		void processPendingInput();
 
 	protected:
-		Array<LogicFIFO*> inputList;
 		MergerType mergeMode;
 	};
 }
