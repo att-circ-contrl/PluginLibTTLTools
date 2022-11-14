@@ -1,28 +1,55 @@
-# Open Ephys common library template
-This repository contains a template for building libraries intended to be used by plugins for the [Open Ephys GUI](https://github.com/open-ephys/plugin-GUI). Information on the plugin architecture can be found on [our wiki](https://open-ephys.atlassian.net/wiki/spaces/OEW/pages/950363/Plugin+architecture).
+# TTL Tools Library
 
-## Creating a new library
-1. Rename the "CommonLib" folder to the name the library file will have
-2. Add source files to the Source folder. The existing files can be used as a template
-3. [Create the build files through CMake](https://open-ephys.atlassian.net/wiki/spaces/OEW/pages/1259110401/Plugin+CMake+Builds)
+## Overview
 
-## Using external libraries
-To link the library to other external libraries, it is necessary to manually edit the Build/CMakeLists.txt file. The code for linking libraries is located in comments at the end.
-For most commonly used libraries, the `find_package` option is recommended. An example would be
-```cmake
-find_package(ZLIB)
-target_link_libraries(${COMMONLIB_NAME} ${ZLIB_LIBRARIES})
-target_include_directories(${COMMONLIB_NAME} PRIVATE ${ZLIB_INCLUDE_DIRS})
-````
-If there is no standard package finder for cmake, `find_library`and `find_path` can be used to find the library and include files respectively. The commands will search in a variety of standard locations For example
-```cmake
-find_library(ZMQ_LIBRARIES NAMES libzmq-v120-mt-4_0_4 zmq zmq-v120-mt-4_0_4) #the different names after names are not a list of libraries to include, but a list of possible names the library might have, useful for multiple architectures. find_library will return the first library found that matches any of the names
-find_path(ZMQ_INCLUDE_DIRS zmq.h)
+This library provides implementations of several structures and signal
+processing operations that are useful for TTL event processing. These were
+originally part of the "TTL Conditional Trigger" plugin, but have been
+packaged as a library for reuse in other plugins.
 
-target_link_libraries(${COMMONLIB_NAME} ${ZMQ_LIBRARIES})
-target_include_directories(${COMMONLIB_NAME} PRIVATE ${ZMQ_INCLUDE_DIRS})
-````
-### Providing libraries for Windows
+Elements offered are:
+* A circular buffer template class.
+* A set of objects for making TTL event FIFOs and producing TTL outputs
+in response to "triggers" seen on TTL inputs.
+
+## Circular Buffer Template
+
+This is a light-weight circular buffer class with a statically allocated
+buffer. This is useful for situations where:
+* Fast, light-weight processing is critical (no calls to the heap manager for
+dynamic allocation, no locking).
+* Copy-by-value capability is desired.
+
+This has the following drawbacks:
+* Static allocation means that you need to know the buffer size at compile
+time, are limited to that size, and are forced to allocate the full size for
+all buffers whether they need it or not.
+* No locking means that this buffer implementation is not MT-safe.
+
+If you need MT-safe buffering, use one of JUCE's FIFO classes instead of
+this.
+
+## TTL Trigger Processing Classes
+
+The following classes are provided for trigger processing:
+* `LogicFIFO` - This encapsulates a FIFO buffer for TTL events. The internal
+implementation uses a fixed-sized circular buffer. This is used as a base
+class for more complex logic-processing classes.
+* `LogicMerger` - This is given pointers to several input FIFOs and polls
+them for pending events, providing the logical-AND or logical-OR of its
+inputs. This encapsulates logic for merging multiple sorted event lists.
+* `ConditionProcessor` - This looks at an input TTL signal for trigger
+events and asserts an output when a trigger event is seen. The input and
+output configurations are flexible (encapsulated by the `ConditionConfig`
+class).
+
+A diagram illustrating some of the configurable trigger/output elements is
+shown below:
+
+![Condition Timing](./Auxiliary/signal-timing.png)
+
+## (From Open Ephys's documentation): Providing libraries for Windows
+
 Since Windows does not have standardized paths for libraries, as Linux and macOS do, it is sometimes useful to pack the appropriate Windows version of the required libraries alongside the library files.
 To do so, a *libs* directory has to be created **at the top level** of the repository, alongside this README file, and files from all required libraries placed there. The required folder structure is:
 ```
@@ -36,3 +63,5 @@ To do so, a *libs* directory has to be created **at the top level** of the repos
         └─ x86           #32-bit runtime (.dll) files, if needed
 ```
 DLLs in the bin directories will be copied to the open-ephys GUI *shared* folder when installing.
+
+_(This is the end of the file.)_
