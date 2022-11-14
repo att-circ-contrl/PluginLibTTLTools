@@ -8,6 +8,9 @@ using namespace TTLTools;
 // Tattle enable/disable switch.
 #define LOGICWANTDEBUG 1
 
+// Condition bypass switch. Set this to just act like a FIFO.
+#define LOGICDEBUG_BYPASSCONDITION 1
+
 // Conditional code block.
 #if LOGICWANTDEBUG
 #define L_DEBUG(x) do { x } while(false);
@@ -254,9 +257,15 @@ void ConditionProcessor::handleInput(int64 inputTime, bool inputLevel)
 // FIXME - Diagnostics. Spammy!
 //L_PRINT("CondProc got input " << (inputLevel ? 1 : 0) << " at time " << inputTime << ".");
 
-// FIXME - handleInput NYI.
-// Just be a FIFO for testing purposes.
-enqueueOutput(inputTime, inputLevel);
+#if LOGICDEBUG_BYPASSCONDITION
+    // Just be a FIFO for testing purposes.
+    if (inputLevel != prevInputLevel)
+        enqueueOutput(inputTime, inputLevel);
+#else
+
+    // FIXME - handleInput NYI.
+
+#endif
 
     // Update the "last input seen" record.
     resetInput(inputTime, inputLevel);
