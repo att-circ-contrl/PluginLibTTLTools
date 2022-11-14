@@ -87,7 +87,7 @@ namespace TTLTools
 		bool prevInputLevel;
 		int prevInputTag;
 
-		bool prevAcknowledgedTime;
+		int64 prevAcknowledgedTime;
 		bool prevAcknowledgedLevel;
 		int prevAcknowledgedTag;
 

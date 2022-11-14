@@ -120,7 +120,7 @@ void LogicFIFO::resetInput(int64 resetTime, bool newInput, int newTag)
 void LogicFIFO::handleInput(int64 inputTime, bool inputLevel, int inputTag)
 {
 // FIXME - Diagnostics. Spammy!
-L_PRINT("FIFO got input " << (inputLevel ? 1 : 0) << " with tag " << inputTag << " at time " << inputTime << ".");
+//L_PRINT("FIFO got input " << (inputLevel ? 1 : 0) << " with tag " << inputTag << " at time " << inputTime << ".");
 
     // Update the "last input seen" record.
     resetInput(inputTime, inputLevel, inputTag);
@@ -250,6 +250,8 @@ void LogicFIFO::enqueueOutput(int64 newTime, bool newLevel, int newTag)
     pendingOutputTimes.enqueue(newTime);
     pendingOutputLevels.enqueue(newLevel);
     pendingOutputTags.enqueue(newTag);
+// FIXME - Spammy diagnostics.
+//L_PRINT(".. fifo output enqueued for tag " << newTag << " level " << (newLevel ? 1 : 0) << " at time " << newTime << ".");
 }
 
 
@@ -380,7 +382,7 @@ bool MergerBase::advanceToNextTime()
 {
     bool hadInput;
 
-    // Identify the oldest pending timestamp.
+    // Identify the oldest pending timestamp and record it.
     hadInput = false;
     for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
         if (NULL != inputList[inIdx])
