@@ -40,6 +40,7 @@ namespace TTLTools
 
 	// Condition processing for one TTL signal.
 	// NOTE - This strips tags, since there isn't a 1:1 mapping between input and output events.
+	// NOTE - You'll have to call advanceToTime(), since this buffers input events for deglitching.
 	class COMMON_LIB ConditionProcessor : public LogicFIFO
 	{
 	public:
@@ -53,11 +54,14 @@ namespace TTLTools
 		ConditionConfig getConfig();
 
 		void resetState() override;
+		void resetInput(int64 resetTime, bool newInput, int newTag = 0) override;
 		void handleInput(int64 inputTime, bool inputLevel, int inputTag = 0) override;
 		void advanceToTime(int64 newTime) override;
 
 	protected:
 		ConditionConfig config;
+
+		LogicFIFO inputBuffer;
 
 		bool waitingForTrig;
 		int64 prevTrigTime;

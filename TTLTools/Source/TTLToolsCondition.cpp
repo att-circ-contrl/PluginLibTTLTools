@@ -87,8 +87,6 @@ ConditionProcessor::ConditionProcessor()
 void ConditionProcessor::setConfig(ConditionConfig &newConfig)
 {
     config = newConfig;
-
-    // NOTE - We're clearing trigger processing state and pending output state but keeping the record of previous input.
     resetState();
 }
 
@@ -99,10 +97,11 @@ ConditionConfig ConditionProcessor::getConfig()
 }
 
 
-// State reset. This clears active events after a configuration change.
+// State reset. This clears input and output and resets condition state.
 void ConditionProcessor::resetState()
 {
     LogicFIFO::resetState();
+    inputBuffer.resetState();
 
     // Adjust idle output to reflect configuration.
     prevAcknowledgedLevel = !(config.outputActiveHigh);
@@ -113,61 +112,46 @@ void ConditionProcessor::resetState()
 }
 
 
+// This overwrites our record of the previous input levels without causing an event update.
+// NOTE - This does not clear the input FIFO. Use resetState() for that.
+// This is used for initialization.
+void ConditionProcessor::resetInput(int64 resetTime, bool newInput, int newTag)
+{
+    inputBuffer.resetInput(resetTime, newInput, newTag);
+    LogicFIFO::resetInput(resetTime, newInput, newTag);
+}
+
+
 // Input processing. This schedules future output in response to input events.
 // NOTE - This strips tags, since there isn't a 1:1 mapping between input and output events.
+// NOTE - Since we need to know the future to do deglitching, this enqueues events into an input buffer and leaves processing to advanceToTime().
 void ConditionProcessor::handleInput(int64 inputTime, bool inputLevel, int inputTag)
 {
 // FIXME - Diagnostics. Spammy!
-//L_PRINT("CondProc got input " << (inputLevel ? 1 : 0) << " at time " << inputTime << ".");
+//L_PRINT("handleInput() got input " << (inputLevel ? 1 : 0) << " at time " << inputTime << ".");
 
-#if LOGICDEBUG_BYPASSCONDITION
-    // Just be a FIFO for testing purposes.
-    if (inputLevel != prevInputLevel)
-        enqueueOutput(inputTime, inputLevel, 0);
-#else
-
-    if (waitingForTrig)
-    {
-    // See if we have a trigger event.
-
-    bool sawEdge = (prevInputLevel != inputLevel);
-
-    // Check for unstable input.
-    if (sawTrig && sawEdge)
-    {
-        if ((inputTime - prevTrigTime)
-    }
-    if (prevInputLevel != inputLevel)
-    {
-        switch (config.desiredFeature)
-        {
-            case levelHigh:
-        }
-    }
-
-    // Update the "last input seen" record.
-    resetInput(inputTime, inputLevel, inputTag);
-    }
-    else
-    {
-        // We
-    }
-
-    // FIXME - handleInput NYI.
-
-#endif
-
-    // Update the "last input seen" record.
-    resetInput(inputTime, inputLevel, inputTag);
+   inputBuffer.handleInput(inputTime, inputLevel, inputTag);
 }
 
 
 // Input processing. This advances the internal time to the specified timestamp.
 void ConditionProcessor::advanceToTime(int64 newTime)
 {
-    // Add a dummy input event so that we generate output events up to the desired time.
-    if (newTime > prevInputTime)
-        handleInput(newTime, prevInputLevel, prevInputTag);
+#if LOGICDEBUG_BYPASSCONDITION
+    // Just be a FIFO for testing purposes.
+    while (inputBuffer.hasPendingOutput())
+    {
+        LogicFIFO::handleInput( inputBuffer.getNextOutputTime(), inputBuffer.getNextOutputLevel(), inputBuffer.getNextOutputTag() );
+        inputBuffer.acknowledgeOutput();
+    }
+#else
+
+    // FIXME - advanceToTime NYI.
+
+    // Update the "last input seen" record.
+//    resetInput(inputTime, inputLevel, inputTag);
+
+#endif
 }
 
 
