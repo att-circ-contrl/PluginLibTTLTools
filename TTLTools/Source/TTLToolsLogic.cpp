@@ -1,82 +1,13 @@
-#include "TTLToolsCircBuf.h"
-#include "TTLToolsLogic.h"
+#include "TTLTools.h"
+#define LOGICDEBUGPREFIX "[TTLToolsLogic]  "
+#include "TTLToolsDebug.h"
 
 using namespace TTLTools;
 
-// Diagnostic tattle macros.
+// Private constants.
 
-// Tattle enable/disable switch.
-#define LOGICWANTDEBUG 1
-
-// Condition bypass switch. Set this to just act like a FIFO.
-#define LOGICDEBUG_BYPASSCONDITION 1
-
-// Conditional code block.
-#if LOGICWANTDEBUG
-#define L_DEBUG(x) do { x } while(false);
-#else
-#define L_DEBUG(x) {}
-#endif
-
-// Debug tattle output.
-// Flushing should already happen with std::endl, but force it anyways.
-#define L_PRINT(x) L_DEBUG(std::cout << "[Logic]  " << x << std::endl << std::flush;)
-
-
-//
-// Configuration for processing conditions on one signal.
-
-
-// Constructor.
-ConditionConfig::ConditionConfig()
-{
-    // Initialize to safe defaults.
-    clear();
-}
-
-
-// Default destructor is fine.
-
-
-// This sets a known-sane configuration state.
-void ConditionConfig::clear()
-{
-    // Set sane defaults.
-
-    desiredFeature = FeatureType::levelHigh;
-
-    delayMinSamps = 0;
-    delayMaxSamps = 0;
-    sustainSamps = 10;
-    deadTimeSamps = 100;
-    deglitchSamps = 0;
-
-    outputActiveHigh = true;
-}
-
-
-// This forces configuration parameters to be valid and self-consistent.
-void ConditionConfig::forceSanity()
-{
-    if ( (desiredFeature < ConditionConfig::levelHigh) || (desiredFeature > ConditionConfig::edgeFalling) )
-        desiredFeature = ConditionConfig::levelHigh;
-
-    if (delayMinSamps < 0)
-        delayMinSamps = 0;
-
-    if (delayMaxSamps < delayMinSamps)
-        delayMaxSamps = delayMinSamps;
-
-    if (sustainSamps < 1)
-        sustainSamps = 1;
-
-    if (deadTimeSamps < 0)
-        deadTimeSamps = 0;
-
-    if (deglitchSamps < 0)
-        deglitchSamps = 0;
-}
-
+// This timestamp could happen, but we need _something_ as the default.
+#define LOGIC_TIMESTAMP_BOGUS (-1)
 
 
 //
@@ -99,8 +30,7 @@ void LogicFIFO::resetState()
     pendingOutputLevels.clear();
     pendingOutputTags.clear();
 
-    // FIXME - Bogus timestamp!
-    prevAcknowledgedTime = -1;
+    prevAcknowledgedTime = LOGIC_TIMESTAMP_BOGUS;
     prevAcknowledgedLevel = false;
     prevAcknowledgedTag = 0;
 }
@@ -257,82 +187,7 @@ void LogicFIFO::enqueueOutput(int64 newTime, bool newLevel, int newTag)
 
 
 //
-// Condition processing for one TTL signal.
-
-
-// Constructor.
-ConditionProcessor::ConditionProcessor()
-{
-    // The constructor should already have done this, but do it anyways.
-    config.clear();
-
-    // Initialize. Use a dummy timestamp and input level.
-    resetInput(0, false);
-    resetState();
-}
-
-
-// Configuration accessors.
-
-void ConditionProcessor::setConfig(ConditionConfig &newConfig)
-{
-    config = newConfig;
-
-    // NOTE - We're clearing pending output state but keeping the record of previous input.
-    resetState();
-}
-
-
-ConditionConfig ConditionProcessor::getConfig()
-{
-    return config;
-}
-
-
-// State reset. This clears active events after a configuration change.
-void ConditionProcessor::resetState()
-{
-    LogicFIFO::resetState();
-
-    // Adjust idle output to reflect configuration.
-    prevAcknowledgedLevel = !(config.outputActiveHigh);
-}
-
-
-// Input processing. This schedules future output in response to input events.
-// NOTE - This strips tags, since there isn't a 1:1 mapping between input and output events.
-void ConditionProcessor::handleInput(int64 inputTime, bool inputLevel, int inputTag)
-{
-// FIXME - Diagnostics. Spammy!
-//L_PRINT("CondProc got input " << (inputLevel ? 1 : 0) << " at time " << inputTime << ".");
-
-#if LOGICDEBUG_BYPASSCONDITION
-    // Just be a FIFO for testing purposes.
-    if (inputLevel != prevInputLevel)
-        enqueueOutput(inputTime, inputLevel, 0);
-#else
-
-    // FIXME - handleInput NYI.
-
-#endif
-
-    // Update the "last input seen" record.
-    resetInput(inputTime, inputLevel, inputTag);
-}
-
-
-// Input processing. This advances the internal time to the specified timestamp.
-void ConditionProcessor::advanceToTime(int64 newTime)
-{
-    // Add a dummy input event so that we generate output events up to the desired time.
-    if (newTime > prevInputTime)
-        handleInput(newTime, prevInputLevel, prevInputTag);
-}
-
-
-
-//
-// Merging of multiple condition processor outputs - Base class.
+// Merging of multiple FIFO outputs - Base class.
 
 // This works by pulling, to avoid needing input buffers.
 // The base class implements features shared by the multiplexer and the logical merger.
@@ -343,8 +198,8 @@ MergerBase::MergerBase()
 {
     clearInputList();
 
-    // Negative timestamps might exist, but we have to initialize to something.
-    earliestTime = -1;
+    // This timestamp might occur, but we have to initialize to something.
+    earliestTime = LOGIC_TIMESTAMP_BOGUS;
 
     // We have no inputs yet, so there's no need to call resetState() here.
     // The parent constructor already reset output state, and virtual tables aren't yet initialized.
@@ -421,7 +276,7 @@ int64 MergerBase::getCurrentInputTime()
 
 
 //
-// Merging of multiple condition processor outputs - Multiplexer.
+// Merging of multiple FIFO outputs - Multiplexer.
 
 // This works by pulling, to avoid needing input buffers.
 // This is a multiplexer, combining several input streams into an in-order output stream with input identification tags.
@@ -470,7 +325,7 @@ void MuxMerger::processPendingInput()
 
 
 //
-// Merging of multiple condition processor outputs - Logical merger.
+// Merging of multiple FIFO outputs - Logical merger.
 
 // This works by pulling, to avoid needing input buffers.
 // This performs a boolean AND or OR operation on its inputs, returning a single output.
