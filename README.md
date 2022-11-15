@@ -33,17 +33,28 @@ this.
 
 The following classes are provided for trigger processing:
 * `LogicFIFO` - This encapsulates a FIFO buffer for TTL events. The internal
-implementation uses a fixed-sized circular buffer. This is used as a base
-class for more complex logic-processing classes.
+implementation uses a fixed-sized circular buffer. Events have a timestamp,
+a boolean TTL state, and an optional integer tag associated with them.
+The `LogicFIFO` class is used as a base class for more complex
+logic-processing classes.
+* `MergerBase` - This is given pointers to several input FIFOs and polls
+them for pending events. This encapsulates the logic for merging multiple
+in-order input event streams to produce an in-order output event stream.
+Polling is used so that we don't need input buffers (the upstream output
+buffers are used instead). `MergerBase` is used as a base class for
+`MuxMerger` and `LogicMerger`.
+* `MuxMerger` - This is given pointers to several input FIFOs and polls them
+for pending events. These events are merged into an output stream, with
+output event tags indicating which input stream each event came from. Tags
+associated with input events are discarded.
 * `LogicMerger` - This is given pointers to several input FIFOs and polls
-them for pending events, providing the logical-AND or logical-OR of its
-inputs. This encapsulates logic for merging multiple sorted event lists.
-Polling also means we don't need input buffers (we use the upstream output
-buffers instead).
+them for pending events. An output stream is generated that's the logical-AND
+or logical-OR of the input channel states. Tags associated with input
+events are discarded.
 * `ConditionProcessor` - This looks at an input TTL signal for trigger
 events and asserts an output when a trigger event is seen. The input and
 output configurations are flexible (encapsulated by the `ConditionConfig`
-class).
+class). Tags associated with input events are discarded.
 
 A diagram illustrating some of the configurable trigger/output elements is
 shown below:
