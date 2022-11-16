@@ -59,13 +59,14 @@ namespace TTLTools
 		void advanceToTime(int64 newTime) override;
 
 	protected:
+		Random rng;
+
 		ConditionConfig config;
 
 		LogicFIFO inputBuffer;
 
-		bool waitingForTrig;
+		int64 lastChangeTime;
 		int64 prevTrigTime;
-		int64 nextStateTime;
 	};
 }
 

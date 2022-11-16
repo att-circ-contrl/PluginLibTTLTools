@@ -107,8 +107,10 @@ void ConditionProcessor::resetState()
     prevAcknowledgedLevel = !(config.outputActiveHigh);
 
     // Clear trigger processing state.
-    waitingForTrig = true;
+    lastChangeTime = LOGIC_TIMESTAMP_BOGUS;
     prevTrigTime = LOGIC_TIMESTAMP_BOGUS;
+    // Walk the previous-trigger time back far enough that we aren't in dead time.
+    prevTrigTime -= config.deadTimeSamps;
 }
 
 
@@ -130,7 +132,10 @@ void ConditionProcessor::handleInput(int64 inputTime, bool inputLevel, int input
 // FIXME - Diagnostics. Spammy!
 //L_PRINT("handleInput() got input " << (inputLevel ? 1 : 0) << " at time " << inputTime << ".");
 
-   inputBuffer.handleInput(inputTime, inputLevel, inputTag);
+    if (inputLevel != inputBuffer.getLastInputLevel())
+        lastChangeTime = inputTime;
+
+    inputBuffer.handleInput(inputTime, inputLevel, inputTag);
 }
 
 
@@ -146,10 +151,66 @@ void ConditionProcessor::advanceToTime(int64 newTime)
     }
 #else
 
-    // FIXME - advanceToTime NYI.
+    // Walk the advance time back by the deglitch lookahead.
+    newTime -= config.deglitchSamps;
 
-    // Update the "last input seen" record.
-//    resetInput(inputTime, inputLevel, inputTag);
+// FIXME - We're not handling level-triggered output properly!
+// We're only checking trigger conditions when events happen. They only happen on edges.
+
+    // Process all pending events up to newTime.
+    while ( inputBuffer.hasPendingOutput() && (inputBuffer.getNextOutputTime() <= newTime) )
+    {
+        // Fetch this input.
+        int64 thisTime = inputBuffer.getNextOutputTime();
+        bool thisLevel = inputBuffer.getNextOutputLevel();
+        // We're stripping tags, so no need to fetch that.
+        inputBuffer.acknowledgeOutput();
+
+        // Detect edges.
+        bool haveRising = (thisLevel && (!prevInputLevel));
+        bool haveFalling = ((!thisLevel) && prevInputLevel);
+
+        // Update the "last input seen" record.
+        resetInput(thisTime, thisLevel);
+
+        // Figure out if the signal is stable and if we're still in dead time.
+        bool isStable = ( (lastChangeTime <= thisTime) || (lastChangeTime >= (thisTime + config.deglitchSamps)) );
+        bool isLive = ( thisTime >= (prevTrigTime + config.deadTimeSamps) );
+
+        // If we meet the assert conditions, assert.
+        if (isStable && isLive)
+        {
+            bool wantAssert = false;
+            switch (config.desiredFeature)
+            {
+            case ConditionConfig::levelHigh:
+                wantAssert = thisLevel; break;
+            case ConditionConfig::levelLow:
+                wantAssert = !thisLevel; break;
+            case ConditionConfig::edgeRising:
+                wantAssert = haveRising; break;
+            case ConditionConfig::edgeFalling:
+                wantAssert = haveFalling; break;
+            default:
+                break;
+            }
+
+            if (wantAssert)
+            {
+                // We're past the dead time from our previous trigger; schedule a new output pulse.
+
+                prevTrigTime = thisTime;
+
+		int64 thisDelay = rng.nextInt64();
+                thisDelay %= (1 + config.delayMaxSamps - config.delayMinSamps);
+                thisDelay += config.delayMinSamps;
+
+                enqueueOutput(thisTime + thisDelay, config.outputActiveHigh, 0);
+                enqueueOutput(thisTime + thisDelay + config.sustainSamps, !(config.outputActiveHigh), 0);
+            }
+        }
+    }
+
 
 #endif
 }

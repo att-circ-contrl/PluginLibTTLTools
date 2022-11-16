@@ -8,7 +8,7 @@
 #define LOGICWANTDEBUG 1
 
 // Condition bypass switch. Set this to make conditional triggers act like FIFOs.
-#define LOGICDEBUG_BYPASSCONDITION 1
+#define LOGICDEBUG_BYPASSCONDITION 0
 
 
 // Diagnostic tattle macros.
