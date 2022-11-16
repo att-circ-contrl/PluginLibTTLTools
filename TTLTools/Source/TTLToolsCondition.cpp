@@ -107,10 +107,8 @@ void ConditionProcessor::resetState()
     prevAcknowledgedLevel = !(config.outputActiveHigh);
 
     // Clear trigger processing state.
-    lastChangeTime = LOGIC_TIMESTAMP_BOGUS;
-    prevTrigTime = LOGIC_TIMESTAMP_BOGUS;
-    // Walk the previous-trigger time back far enough that we aren't in dead time.
-    prevTrigTime -= config.deadTimeSamps;
+    nextStableTime = LOGIC_TIMESTAMP_BOGUS;
+    nextReadyTime = LOGIC_TIMESTAMP_BOGUS;
 }
 
 
@@ -132,9 +130,6 @@ void ConditionProcessor::handleInput(int64 inputTime, bool inputLevel, int input
 // FIXME - Diagnostics. Spammy!
 //L_PRINT("handleInput() got input " << (inputLevel ? 1 : 0) << " at time " << inputTime << ".");
 
-    if (inputLevel != inputBuffer.getLastInputLevel())
-        lastChangeTime = inputTime;
-
     inputBuffer.handleInput(inputTime, inputLevel, inputTag);
 }
 
@@ -151,12 +146,6 @@ void ConditionProcessor::advanceToTime(int64 newTime)
     }
 #else
 
-    // Walk the advance time back by the deglitch lookahead.
-    newTime -= config.deglitchSamps;
-
-// FIXME - We're not handling level-triggered output properly!
-// We're only checking trigger conditions when events happen. They only happen on edges.
-
     // Process all pending events up to newTime.
     while ( inputBuffer.hasPendingOutput() && (inputBuffer.getNextOutputTime() <= newTime) )
     {
@@ -166,53 +155,86 @@ void ConditionProcessor::advanceToTime(int64 newTime)
         // We're stripping tags, so no need to fetch that.
         inputBuffer.acknowledgeOutput();
 
-        // Detect edges.
-        bool haveRising = (thisLevel && (!prevInputLevel));
-        bool haveFalling = ((!thisLevel) && prevInputLevel);
+        // Check for phantom events before this input event.
+        // Deglitching only times out once, but re-triggering can happen repeatedly.
+        // If we're still in dead time, deglitch time timing out doesn't matter. So only dead time timing out matters.
+        bool hadChange = true;
+        while ( hadChange && (nextReadyTime < thisTime) )
+            hadChange = checkForTrigger(nextReadyTime, prevInputLevel);
 
-        // Update the "last input seen" record.
-        resetInput(thisTime, thisLevel);
+        // Check for triggers in response to this input event.
+        checkForTrigger(thisTime, thisLevel);
+    }
 
-        // Figure out if the signal is stable and if we're still in dead time.
-        bool isStable = ( (lastChangeTime <= thisTime) || (lastChangeTime >= (thisTime + config.deglitchSamps)) );
-        bool isLive = ( thisTime >= (prevTrigTime + config.deadTimeSamps) );
+#endif
+}
 
-        // If we meet the assert conditions, assert.
-        if (isStable && isLive)
+
+// This checks to see if trigger conditions are met and enqueues an output pulse if so.
+// The idea is to call this for both real and phantom events.
+// This returns true if "nextStableTime" or "nextReadyTime" changed.
+bool ConditionProcessor::checkForTrigger(int64 thisTime, bool thisLevel)
+{
+    bool hadTimeChange = false;
+
+    // Detect edges.
+    bool haveRising = (thisLevel && (!prevInputLevel));
+    bool haveFalling = ((!thisLevel) && prevInputLevel);
+
+    // Figure out if the signal is stable and if we're still in dead time.
+    bool isStable = ( thisTime >= nextStableTime );
+    bool isReady = ( thisTime >= nextReadyTime );
+
+    // Record any edge that we just saw.
+    if (haveRising || haveFalling)
+    {
+        nextStableTime = thisTime + config.deglitchSamps;
+        hadTimeChange = true;
+    }
+
+// FIXME - Diagnostics.
+L_PRINT( "Input " << (thisLevel ? 1 : 0) << " at " << thisTime << " rise: " << (haveRising ? "Y" : "n") << "  fall: " << (haveFalling ? "Y" : "n") << "  Stable: " << (isStable ? "Y" : "n") << "  Ready: " << (isReady ? "Y" : "n") );
+
+    // If we meet the assert conditions, assert.
+    if (isStable && isReady)
+    {
+        bool wantAssert = false;
+        switch (config.desiredFeature)
         {
-            bool wantAssert = false;
-            switch (config.desiredFeature)
-            {
-            case ConditionConfig::levelHigh:
-                wantAssert = thisLevel; break;
-            case ConditionConfig::levelLow:
-                wantAssert = !thisLevel; break;
-            case ConditionConfig::edgeRising:
-                wantAssert = haveRising; break;
-            case ConditionConfig::edgeFalling:
-                wantAssert = haveFalling; break;
-            default:
-                break;
-            }
+        case ConditionConfig::levelHigh:
+            wantAssert = thisLevel; break;
+        case ConditionConfig::levelLow:
+            wantAssert = !thisLevel; break;
+        case ConditionConfig::edgeRising:
+            wantAssert = haveRising; break;
+        case ConditionConfig::edgeFalling:
+            wantAssert = haveFalling; break;
+        default:
+            break;
+        }
 
-            if (wantAssert)
-            {
-                // We're past the dead time from our previous trigger; schedule a new output pulse.
+        if (wantAssert)
+        {
+            // We're past the dead time from our previous trigger; schedule a new output pulse.
 
-                prevTrigTime = thisTime;
+            nextReadyTime = thisTime + config.deadTimeSamps;
+            hadTimeChange = true;
 
-		int64 thisDelay = rng.nextInt64();
-                thisDelay %= (1 + config.delayMaxSamps - config.delayMinSamps);
-                thisDelay += config.delayMinSamps;
+            int64 thisDelay = rng.nextInt64();
+            thisDelay %= (1 + config.delayMaxSamps - config.delayMinSamps);
+            thisDelay += config.delayMinSamps;
+// FIXME - Diagnostics.
+L_PRINT("Asserting " << (config.outputActiveHigh ? "high" : "low") << ";  now: " << thisTime << "  delay: " << thisDelay << "  sustain: " << config.sustainSamps);
 
-                enqueueOutput(thisTime + thisDelay, config.outputActiveHigh, 0);
-                enqueueOutput(thisTime + thisDelay + config.sustainSamps, !(config.outputActiveHigh), 0);
-            }
+            enqueueOutput(thisTime + thisDelay, config.outputActiveHigh, 0);
+            enqueueOutput(thisTime + thisDelay + config.sustainSamps, !(config.outputActiveHigh), 0);
         }
     }
 
+    // Update the "last input seen" record.
+    LogicFIFO::resetInput(thisTime, thisLevel);
 
-#endif
+    return hadTimeChange;
 }
 
 

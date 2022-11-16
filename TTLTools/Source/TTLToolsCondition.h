@@ -65,8 +65,11 @@ namespace TTLTools
 
 		LogicFIFO inputBuffer;
 
-		int64 lastChangeTime;
-		int64 prevTrigTime;
+		int64 nextStableTime;
+		int64 nextReadyTime;
+
+		// This returns true if "nextStableTime" or "nextReadyTime" changed.
+		bool checkForTrigger(int64 thisTime, bool thisLevel);
 	};
 }
 
