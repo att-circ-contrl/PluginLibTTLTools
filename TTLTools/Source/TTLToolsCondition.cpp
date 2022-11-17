@@ -128,12 +128,7 @@ void ConditionProcessor::handleInput(int64 inputTime, bool inputLevel, int input
 //L_PRINT("handleInput() got input " << (inputLevel ? 1 : 0) << " at time " << inputTime << ".");
 
 #if LOGICDEBUG_BYPASSCONDITION
-    // Just be a FIFO for testing purposes.
-    while (inputBuffer.hasPendingOutput())
-    {
-        LogicFIFO::handleInput( inputBuffer.getNextOutputTime(), inputBuffer.getNextOutputLevel(), inputBuffer.getNextOutputTag() );
-        inputBuffer.acknowledgeOutput();
-    }
+    LogicFIFO::handleInput(inputTime, inputLevel, inputTag);
 #else
 
     checkPhantomEventsUntil(inputTime);
@@ -177,7 +172,7 @@ bool ConditionProcessor::checkForTrigger(int64 thisTime, bool thisLevel)
     }
 
 // FIXME - Diagnostics. Very spammy!
-L_PRINT( "Input " << (thisLevel ? "high" : "low") << " at " << thisTime << " rise: " << (haveRising ? "Y" : "n") << "  fall: " << (haveFalling ? "Y" : "n") << "  Stable: " << (isStable ? "Y" : "n") << "  Rdy: " << (isReady ? "Y" : "n") );
+//L_PRINT( "Input " << (thisLevel ? "high" : "low") << " at " << thisTime << " rise: " << (haveRising ? "Y" : "n") << "  fall: " << (haveFalling ? "Y" : "n") << "  Stable: " << (isStable ? "Y" : "n") << "  Rdy: " << (isReady ? "Y" : "n") );
 
     // If we meet the assert conditions, assert.
     if (isStable && isReady)
