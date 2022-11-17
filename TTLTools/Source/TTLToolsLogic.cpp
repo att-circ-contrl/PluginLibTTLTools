@@ -292,34 +292,33 @@ MuxMerger::MuxMerger()
 
 // Accessors.
 
-void MuxMerger::processPendingInput()
+void MuxMerger::processPendingInputUntil(int64 newTime)
 {
     bool hadInput;
     int64 currentTime, thisTime;
 
     // Scan over all inputs, pick the oldest, and process it.
-    do
+    // Only do this up to the specified time.
+    hadInput = true;
+    currentTime = getCurrentInputTime();
+    while ( hadInput && (currentTime <= newTime) )
     {
+        // We have pending inputs. Emit output events corresponding to the input events that just happened.
+         for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
+             if (NULL != inputList[inIdx])
+             {
+                 int64 thisTime = inputList[inIdx]->getLastAcknowledgedTime();
+                 if (thisTime == currentTime)
+                 {
+                     bool thisLevel = inputList[inIdx]->getLastAcknowledgedLevel();
+                     enqueueOutput(thisTime, thisLevel, inputTags[inIdx]);
+                 }
+             }
+
         // Advance to the oldest still-pending timestamp and acknowledge input to that point.
         hadInput = advanceToNextTime();
-
-        // If we had inputs, emit output events corresponding to the input events that just happened.
-        if (hadInput)
-        {
-            currentTime = getCurrentInputTime();
-            for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
-                if (NULL != inputList[inIdx])
-                {
-                    int64 thisTime = inputList[inIdx]->getLastAcknowledgedTime();
-                    if (thisTime == currentTime)
-                    {
-                        bool thisLevel = inputList[inIdx]->getLastAcknowledgedLevel();
-                        enqueueOutput(thisTime, thisLevel, inputTags[inIdx]);
-                    }
-                }
-        }
+        currentTime = getCurrentInputTime();
     }
-    while (hadInput);
 }
 
 
@@ -349,45 +348,43 @@ void LogicMerger::setMergeMode(LogicMerger::MergerType newMode)
 }
 
 
-void LogicMerger::processPendingInput()
+void LogicMerger::processPendingInputUntil(int64 newTime)
 {
     bool hadInput;
     bool thisOutput;
 
     // Scan over all inputs, pick the oldest, and process it.
-    do
+    // Only do this up to the specified time.
+    hadInput = true;
+    while ( hadInput && (getCurrentInputTime() <= newTime) )
     {
+        // We have pending inputs. Build a new output event based on the last acknowledged inputs.
+        // Get the logical-AND or logical-OR of all acknowledged outputs.
+        thisOutput = (mergeMode == mergeAnd);
+        for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
+            if (NULL != inputList[inIdx])
+            {
+                bool thisLevel = inputList[inIdx]->getLastAcknowledgedLevel();
+                switch (mergeMode)
+                {
+                case mergeAnd:
+                    thisOutput = thisOutput && thisLevel;
+                    break;
+                case mergeOr:
+                    thisOutput = thisOutput || thisLevel;
+                    break;
+                default:
+                    break;
+                }
+            }
+
+        // Emit this output.
+        // FIXME - We're not checking to see if output actually _changed_, here.
+        enqueueOutput(earliestTime, thisOutput, 0);
+
         // Advance to the oldest still-pending timestamp and acknowledge input to that point.
         hadInput = advanceToNextTime();
-
-        // If we had input events, build a new output event based on the last acknowledged inputs.
-        if (hadInput)
-        {
-            // Get the logical-AND or logical-OR of all acknowledged outputs.
-            thisOutput = (mergeMode == mergeAnd);
-            for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
-                if (NULL != inputList[inIdx])
-                {
-                    bool thisLevel = inputList[inIdx]->getLastAcknowledgedLevel();
-                    switch (mergeMode)
-                    {
-                    case mergeAnd:
-                        thisOutput = thisOutput && thisLevel;
-                        break;
-                    case mergeOr:
-                        thisOutput = thisOutput || thisLevel;
-                        break;
-                    default:
-                        break;
-                    }
-                }
-
-            // Emit this output.
-            // FIXME - We're not checking to see if output actually _changed_, here.
-            enqueueOutput(earliestTime, thisOutput, 0);
-        }
     }
-    while (hadInput);
 }
 
 

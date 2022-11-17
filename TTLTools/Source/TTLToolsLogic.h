@@ -107,7 +107,7 @@ namespace TTLTools
 		// Accessors.
 		// NOTE - Do not call the LogicFIFO input accessors. Call processPendingInput() instead.
 
-		void processPendingInput();
+		void processPendingInputUntil(int64 newTime);
 
 	protected:
 	};
@@ -134,7 +134,7 @@ namespace TTLTools
 		// NOTE - Do not call the LogicFIFO input accessors. Call processPendingInput() instead.
 
 		void setMergeMode(MergerType newMode);
-		void processPendingInput();
+		void processPendingInputUntil(int64 newTime);
 
 	protected:
 		MergerType mergeMode;
