@@ -45,14 +45,15 @@ void ConditionConfig::clear()
 // This forces configuration parameters to be valid and self-consistent.
 void ConditionConfig::forceSanity()
 {
-    if ( (desiredFeature < ConditionConfig::levelHigh) || (desiredFeature > ConditionConfig::edgeFalling) )
+    switch (desiredFeature)
+    {
+    case ConditionConfig::levelLow: break;
+    case ConditionConfig::edgeRising: break;
+    case ConditionConfig::edgeFalling: break;
+    default:
         desiredFeature = ConditionConfig::levelHigh;
-
-    if (delayMinSamps < 0)
-        delayMinSamps = 0;
-
-    if (delayMaxSamps < delayMinSamps)
-        delayMaxSamps = delayMinSamps;
+        break;
+    }
 
     if (sustainSamps < 1)
         sustainSamps = 1;
@@ -62,6 +63,13 @@ void ConditionConfig::forceSanity()
 
     if (deglitchSamps < 0)
         deglitchSamps = 0;
+
+    // We can't have a delay shorter than the "input stable for" time without being able to see the future.
+    if (delayMinSamps < deglitchSamps)
+        delayMinSamps = deglitchSamps;
+
+    if (delayMaxSamps < delayMinSamps)
+        delayMaxSamps = delayMinSamps;
 }
 
 
