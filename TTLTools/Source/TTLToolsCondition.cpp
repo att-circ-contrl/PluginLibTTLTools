@@ -68,9 +68,9 @@ void ConditionConfig::forceSanity()
     if (delayMaxSamps < delayMinSamps)
         delayMaxSamps = delayMinSamps;
 
-    // Re-trigger interval has to be at least (delay + deglitch) to avoid overlapping pulses.
-    if (deadTimeSamps < (delayMaxSamps + deglitchSamps))
-        deadTimeSamps = delayMaxSamps + deglitchSamps;
+    // Re-trigger interval has to be at least (delay + sustain) to avoid overlapping pulses.
+    if (deadTimeSamps < (delayMaxSamps + sustainSamps))
+        deadTimeSamps = delayMaxSamps + sustainSamps;
 }
 
 
@@ -176,8 +176,8 @@ bool ConditionProcessor::checkForTrigger(int64 thisTime, bool thisLevel)
         hadTimeChange = true;
     }
 
-// FIXME - Diagnostics.
-L_PRINT( "Input " << (thisLevel ? 1 : 0) << " at " << thisTime << " rise: " << (haveRising ? "Y" : "n") << "  fall: " << (haveFalling ? "Y" : "n") << "  Stable: " << (isStable ? "Y" : "n") << "  Ready: " << (isReady ? "Y" : "n") );
+// FIXME - Diagnostics. Very spammy!
+L_PRINT( "Input " << (thisLevel ? "high" : "low") << " at " << thisTime << " rise: " << (haveRising ? "Y" : "n") << "  fall: " << (haveFalling ? "Y" : "n") << "  Stable: " << (isStable ? "Y" : "n") << "  Rdy: " << (isReady ? "Y" : "n") );
 
     // If we meet the assert conditions, assert.
     if (isStable && isReady)
@@ -207,8 +207,8 @@ L_PRINT( "Input " << (thisLevel ? 1 : 0) << " at " << thisTime << " rise: " << (
             int64 thisDelay = rng.nextInt64();
             thisDelay %= (1 + config.delayMaxSamps - config.delayMinSamps);
             thisDelay += config.delayMinSamps;
-// FIXME - Diagnostics.
-L_PRINT("Asserting " << (config.outputActiveHigh ? "high" : "low") << ";  now: " << thisTime << "  delay: " << thisDelay << "  sustain: " << config.sustainSamps);
+// FIXME - Diagnostics. Still spammy.
+L_PRINT("Pulsing " << (config.outputActiveHigh ? "high" : "low") << " from " << (thisTime + thisDelay) << " to " << (thisTime + thisDelay + config.sustainSamps) << " (trigger " << thisTime << ").");
 
             enqueueOutput(thisTime + thisDelay, config.outputActiveHigh, 0);
             enqueueOutput(thisTime + thisDelay + config.sustainSamps, !(config.outputActiveHigh), 0);
