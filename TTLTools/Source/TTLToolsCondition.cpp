@@ -58,9 +58,6 @@ void ConditionConfig::forceSanity()
     if (sustainSamps < 1)
         sustainSamps = 1;
 
-    if (deadTimeSamps < 0)
-        deadTimeSamps = 0;
-
     if (deglitchSamps < 0)
         deglitchSamps = 0;
 
@@ -70,6 +67,10 @@ void ConditionConfig::forceSanity()
 
     if (delayMaxSamps < delayMinSamps)
         delayMaxSamps = delayMinSamps;
+
+    // Re-trigger interval has to be at least (delay + deglitch) to avoid overlapping pulses.
+    if (deadTimeSamps < (delayMaxSamps + deglitchSamps))
+        deadTimeSamps = delayMaxSamps + deglitchSamps;
 }
 
 
