@@ -110,7 +110,6 @@ ConditionConfig ConditionProcessor::getConfig()
 void ConditionProcessor::resetState()
 {
     LogicFIFO::resetState();
-    inputBuffer.resetState();
 
     // Adjust idle output to reflect configuration.
     prevAcknowledgedLevel = !(config.outputActiveHigh);
@@ -121,31 +120,13 @@ void ConditionProcessor::resetState()
 }
 
 
-// This overwrites our record of the previous input levels without causing an event update.
-// NOTE - This does not clear the input FIFO. Use resetState() for that.
-// This is used for initialization.
-void ConditionProcessor::resetInput(int64 resetTime, bool newInput, int newTag)
-{
-    inputBuffer.resetInput(resetTime, newInput, newTag);
-    LogicFIFO::resetInput(resetTime, newInput, newTag);
-}
-
-
 // Input processing. This schedules future output in response to input events.
 // NOTE - This strips tags, since there isn't a 1:1 mapping between input and output events.
-// NOTE - Since we need to know the future to do deglitching, this enqueues events into an input buffer and leaves processing to advanceToTime().
 void ConditionProcessor::handleInput(int64 inputTime, bool inputLevel, int inputTag)
 {
 // FIXME - Diagnostics. Spammy!
 //L_PRINT("handleInput() got input " << (inputLevel ? 1 : 0) << " at time " << inputTime << ".");
 
-    inputBuffer.handleInput(inputTime, inputLevel, inputTag);
-}
-
-
-// Input processing. This advances the internal time to the specified timestamp.
-void ConditionProcessor::advanceToTime(int64 newTime)
-{
 #if LOGICDEBUG_BYPASSCONDITION
     // Just be a FIFO for testing purposes.
     while (inputBuffer.hasPendingOutput())
@@ -155,26 +136,20 @@ void ConditionProcessor::advanceToTime(int64 newTime)
     }
 #else
 
-    // Process all pending events up to newTime.
-    while ( inputBuffer.hasPendingOutput() && (inputBuffer.getNextOutputTime() <= newTime) )
-    {
-        // Fetch this input.
-        int64 thisTime = inputBuffer.getNextOutputTime();
-        bool thisLevel = inputBuffer.getNextOutputLevel();
-        // We're stripping tags, so no need to fetch that.
-        inputBuffer.acknowledgeOutput();
+    checkPhantomEventsUntil(inputTime);
+    checkForTrigger(inputTime, inputLevel);
 
-        // Check for phantom events before this input event.
-        // Deglitching only times out once, but re-triggering can happen repeatedly.
-        // If we're still in dead time, deglitch time timing out doesn't matter. So only dead time timing out matters.
-        bool hadChange = true;
-        while ( hadChange && (nextReadyTime < thisTime) )
-            hadChange = checkForTrigger(nextReadyTime, prevInputLevel);
+#endif
+}
 
-        // Check for triggers in response to this input event.
-        checkForTrigger(thisTime, thisLevel);
-    }
 
+// Input processing. This advances the internal time to the specified timestamp.
+void ConditionProcessor::advanceToTime(int64 newTime)
+{
+#if LOGICDEBUG_BYPASSCONDITION
+    // Do nothing; we're a FIFO for testing purposes.
+#else
+    checkPhantomEventsUntil(newTime);
 #endif
 }
 
@@ -241,9 +216,44 @@ L_PRINT("Asserting " << (config.outputActiveHigh ? "high" : "low") << ";  now: "
     }
 
     // Update the "last input seen" record.
-    LogicFIFO::resetInput(thisTime, thisLevel);
+    resetInput(thisTime, thisLevel);
 
     return hadTimeChange;
+}
+
+
+// This checks for phantom events (becoming stable, becoming ready) up to the specified time.
+void ConditionProcessor::checkPhantomEventsUntil(int64 newTime)
+{
+    // Outside of the ready period, ignore "becoming stable" events.
+    // Inside of the ready period, check for them.
+    // Becoming stable can only happen once, but re-triggering can happen repeatedly.
+    // "prevInputTime" and "prevInputLevel" hold state for the last point we checked.
+
+    bool hadChange = true;
+    // We need to be both ready and stable for anything to happen.
+    while ( hadChange && (nextReadyTime <= newTime) && (nextStableTime <= newTime) )
+    {
+        // There are 6 permutations of the ordering of "became stable", "became ready", and "previous time checked".
+        // xxP -> already checked; nothing to do.
+        // xxR -> only became ready now; check ready.
+        // RPS -> check stable.
+        // PRS -> check ready, then stable (on the next iteration).
+        // ...So, aside from "P last; done", the only non-ready case is "RPS".
+
+        if (nextReadyTime <= prevInputTime)
+        {
+            if (nextStableTime <= prevInputTime)
+                // Already checked both; nothing to do.
+                hadChange = false;
+            else
+                // Already checked "ready"; check "stable".
+                hadChange = checkForTrigger(nextStableTime, prevInputLevel);
+        }
+        else
+            // Check "ready". Becoming stable before becoming ready still only triggers when ready.
+            hadChange = checkForTrigger(nextReadyTime, prevInputLevel);
+    }
 }
 
 
