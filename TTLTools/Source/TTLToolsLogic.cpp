@@ -68,6 +68,7 @@ void LogicFIFO::advanceToTime(int64 newTime)
 
 
 // Input processing. This pulls from another FIFO the same way merger classes do, calling handleInput() to process pulled events.
+// Events with the same timestamp are merged (only the last event is forwarded).
 void LogicFIFO::pullFromFIFOUntil(LogicFIFO *source, int64 newTime)
 {
     bool hadInput = true;
@@ -82,8 +83,12 @@ void LogicFIFO::pullFromFIFOUntil(LogicFIFO *source, int64 newTime)
                 if (thisTime <= newTime)
                 {
                     hadInput = true;
-                    handleInput(thisTime, source->getNextOutputLevel(), source->getNextOutputTag());
-                    source->acknowledgeOutput();
+
+                    // Acknowledge everything with this timestamp, so that we're only dealing with the last relevant event.
+                    while ( (source->hasPendingOutput()) && ( (source->getNextOutputTime()) == thisTime ) )
+                        source->acknowledgeOutput();
+
+                    handleInput(thisTime, source->getLastAcknowledgedLevel(), source->getLastAcknowledgedTag());
                 }
             }
         }
