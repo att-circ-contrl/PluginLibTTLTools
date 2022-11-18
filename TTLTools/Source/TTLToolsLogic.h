@@ -25,15 +25,25 @@ namespace TTLTools
 
 		virtual void resetState();
 
+		// Input processing.
 		virtual void resetInput(int64 resetTime, bool newInput, int newTag = 0);
 		virtual void handleInput(int64 inputTime, bool inputLevel, int inputTag = 0);
 		virtual void advanceToTime(int64 newTime);
+
+		// Alternate input method: Have it pull from another FIFO the same way merger objects do.
+		// This calls handleInput() to process events that it pulls.
+		virtual void pullFromFIFOUntil(LogicFIFO *source, int64 newTime);
+
+		// State accessors.
 
 		bool hasPendingOutput();
 		int64 getNextOutputTime();
 		bool getNextOutputLevel();
 		int getNextOutputTag();
 		void acknowledgeOutput();
+
+		// This acknowledges and discards output up to and including the specified timestamp.
+		void drainOutputUntil(int64 newTime);
 
 		int64 getLastInputTime();
 		bool getLastInputLevel();

@@ -67,6 +67,29 @@ void LogicFIFO::advanceToTime(int64 newTime)
 }
 
 
+// Input processing. This pulls from another FIFO the same way merger classes do, calling handleInput() to process pulled events.
+void LogicFIFO::pullFromFIFOUntil(LogicFIFO *source, int64 newTime)
+{
+    bool hadInput = true;
+
+    if (NULL != source)
+        while (hadInput)
+        {
+            hadInput = false;
+            if (source->hasPendingOutput())
+            {
+                int64 thisTime = source->getNextOutputTime();
+                if (thisTime <= newTime)
+                {
+                    hadInput = true;
+                    handleInput(thisTime, source->getNextOutputLevel(), source->getNextOutputTag());
+                    source->acknowledgeOutput();
+                }
+            }
+        }
+}
+
+
 // State accessors.
 
 bool LogicFIFO::hasPendingOutput()
@@ -99,16 +122,27 @@ int LogicFIFO::getNextOutputTag()
 // This removes the next queued output event, after we've read it.
 void LogicFIFO::acknowledgeOutput()
 {
-    // Save whatever the last output was.
-    // These will return safe values (0 or false) if we don't have pending output.
-    prevAcknowledgedTime = pendingOutputTimes.snoop();
-    prevAcknowledgedLevel = pendingOutputLevels.snoop();
-    prevAcknowledgedTag = pendingOutputTags.snoop();
+    if (hasPendingOutput())
+    {
+        // Save whatever the last output was.
+        // These will return safe values (0 or false) if we don't have pending output.
+        prevAcknowledgedTime = pendingOutputTimes.snoop();
+        prevAcknowledgedLevel = pendingOutputLevels.snoop();
+        prevAcknowledgedTag = pendingOutputTags.snoop();
 
-    // Discard return values.
-    pendingOutputTimes.dequeue();
-    pendingOutputLevels.dequeue();
-    pendingOutputTags.dequeue();
+        // Discard return values.
+        pendingOutputTimes.dequeue();
+        pendingOutputLevels.dequeue();
+        pendingOutputTags.dequeue();
+    }
+}
+
+
+// This acknowledges and discards output up to and including the specified timestamp.
+void LogicFIFO::drainOutputUntil(int64 newTime)
+{
+    while ( hasPendingOutput() && (pendingOutputTimes.snoop() <= newTime) )
+        acknowledgeOutput();
 }
 
 
