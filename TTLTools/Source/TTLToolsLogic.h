@@ -95,11 +95,13 @@ namespace TTLTools
 		// This finds the earliest timestamp in the still-pending input, and acknowledges all input up to that point. It returns false if there's no input.
 		bool advanceToNextTime();
 		int64 getCurrentInputTime();
+		bool inputTimeValid();
 
 	protected:
 		Array<LogicFIFO*> inputList;
 		Array<int> inputTags;
 		int64 earliestTime;
+		bool isValid;
 	};
 
 

@@ -52,11 +52,12 @@ void LogicFIFO::handleInput(int64 inputTime, bool inputLevel, int inputTag)
 // FIXME - Diagnostics. Spammy!
 //L_PRINT("FIFO got input " << (inputLevel ? 1 : 0) << " with tag " << inputTag << " at time " << inputTime << ".");
 
-    // Update the "last input seen" record.
-    resetInput(inputTime, inputLevel, inputTag);
-
     // Copy this event to the output buffer.
     enqueueOutput(inputTime, inputLevel, inputTag);
+
+    // Update the "last input seen" record.
+    // Doing this after enqueue so that enqueue can check the previous state.
+    resetInput(inputTime, inputLevel, inputTag);
 }
 
 
@@ -221,6 +222,14 @@ void LogicFIFO::enqueueOutput(int64 newTime, bool newLevel, int newTag)
     pendingOutputTags.enqueue(newTag);
 // FIXME - Spammy diagnostics.
 //L_PRINT(".. fifo output enqueued for tag " << newTag << " level " << (newLevel ? 1 : 0) << " at time " << newTime << ".");
+
+    // Sanity check for debugging.
+    // NOTE - This may give false alarms if input wasn't initialized (reset) before enqueueOutput was called!
+    if (prevInputTime >= newTime)
+    {
+// FIXME - This can get spammy if there's a bug that trips it!
+        L_PRINT(".. WARNING - FIFO event enqueued out of order (prev time " << prevInputTime << ", new " << newTime << ").");
+    }
 }
 
 
@@ -239,6 +248,7 @@ MergerBase::MergerBase()
 
     // This timestamp might occur, but we have to initialize to something.
     earliestTime = LOGIC_TIMESTAMP_BOGUS;
+    isValid = false;
 
     // We have no inputs yet, so there's no need to call resetState() here.
     // The parent constructor already reset output state, and virtual tables aren't yet initialized.
@@ -302,6 +312,9 @@ bool MergerBase::advanceToNextTime()
                         wasEarly = false;
             }
 
+    if (hadInput)
+        isValid = true;
+
     // Done.
     return hadInput;
 }
@@ -310,6 +323,12 @@ bool MergerBase::advanceToNextTime()
 int64 MergerBase::getCurrentInputTime()
 {
     return earliestTime;
+}
+
+
+bool MergerBase::inputTimeValid()
+{
+    return isValid;
 }
 
 
@@ -338,7 +357,7 @@ void MuxMerger::processPendingInputUntil(int64 newTime)
 
     // Scan over all inputs, pick the oldest, and process it.
     // Only do this up to the specified time.
-    hadInput = true;
+    hadInput = inputTimeValid();
     currentTime = getCurrentInputTime();
     while ( hadInput && (currentTime <= newTime) )
     {
@@ -394,7 +413,7 @@ void LogicMerger::processPendingInputUntil(int64 newTime)
 
     // Scan over all inputs, pick the oldest, and process it.
     // Only do this up to the specified time.
-    hadInput = true;
+    hadInput = inputTimeValid();
     while ( hadInput && (getCurrentInputTime() <= newTime) )
     {
         // We have pending inputs. Build a new output event based on the last acknowledged inputs.
