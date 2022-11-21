@@ -53,7 +53,8 @@ namespace TTLTools
 		void setConfig(ConditionConfig &newConfig);
 		ConditionConfig getConfig();
 
-		void resetState() override;
+		void clearBuffer() override;
+		void resetTrigger();
 		void handleInput(int64 inputTime, bool inputLevel, int inputTag = 0) override;
 		void advanceToTime(int64 newTime) override;
 

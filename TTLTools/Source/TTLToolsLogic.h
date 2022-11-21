@@ -23,10 +23,11 @@ namespace TTLTools
 
 		// Accessors.
 
-		virtual void resetState();
+		// Setup.
+		virtual void clearBuffer();
+		virtual void setPrevInput(int64 resetTime, bool newInput, int newTag = 0);
 
 		// Input processing.
-		virtual void resetInput(int64 resetTime, bool newInput, int newTag = 0);
 		virtual void handleInput(int64 inputTime, bool inputLevel, int inputTag = 0);
 		virtual void advanceToTime(int64 newTime);
 
@@ -90,7 +91,7 @@ namespace TTLTools
 		// Whether id tags are used as event tags is up to the child class.
 		void addInput(LogicFIFO* newInput, int idTag = 0);
 
-		void resetState() override;
+		void clearBuffer() override;
 
 		// This finds the earliest timestamp in the still-pending input, and acknowledges all input up to that point. It returns false if there's no input.
 		bool advanceToNextTime();

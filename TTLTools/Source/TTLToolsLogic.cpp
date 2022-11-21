@@ -17,14 +17,15 @@ using namespace TTLTools;
 // Constructor
 LogicFIFO::LogicFIFO()
 {
-    resetState();
+    clearBuffer();
+    setPrevInput(LOGIC_TIMESTAMP_BOGUS, false);
 }
 
 
 // State manipulation.
 
-// State reset. This clears pending output and sets past output to false.
-void LogicFIFO::resetState()
+// Buffer reset. This clears queued output and sets past output to false.
+void LogicFIFO::clearBuffer()
 {
     pendingOutputTimes.clear();
     pendingOutputLevels.clear();
@@ -38,7 +39,7 @@ void LogicFIFO::resetState()
 
 // This overwrites our record of the previous input levels without causing an event update.
 // This is used for initialization.
-void LogicFIFO::resetInput(int64 resetTime, bool newInput, int newTag)
+void LogicFIFO::setPrevInput(int64 resetTime, bool newInput, int newTag)
 {
     prevInputTime = resetTime;
     prevInputLevel = newInput;
@@ -57,7 +58,7 @@ void LogicFIFO::handleInput(int64 inputTime, bool inputLevel, int inputTag)
 
     // Update the "last input seen" record.
     // Doing this after enqueue so that enqueue can check the previous state.
-    resetInput(inputTime, inputLevel, inputTag);
+    setPrevInput(inputTime, inputLevel, inputTag);
 }
 
 
@@ -250,8 +251,7 @@ MergerBase::MergerBase()
     earliestTime = LOGIC_TIMESTAMP_BOGUS;
     isValid = false;
 
-    // We have no inputs yet, so there's no need to call resetState() here.
-    // The parent constructor already reset output state, and virtual tables aren't yet initialized.
+    // Our output buffer was cleared by the LogicFIFO constructor, and we have no inputs yet, so nothing more to do.
 }
 
 
@@ -271,13 +271,13 @@ void MergerBase::addInput(LogicFIFO* newInput, int idTag)
 }
 
 
-void MergerBase::resetState()
+void MergerBase::clearBuffer()
 {
-    LogicFIFO::resetState();
+    LogicFIFO::clearBuffer();
 
     for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
         if (NULL != inputList[inIdx])
-            (inputList[inIdx])->resetState();
+            (inputList[inIdx])->clearBuffer();
 }
 
 

@@ -86,8 +86,9 @@ ConditionProcessor::ConditionProcessor()
     config.clear();
 
     // Initialize. Use a dummy timestamp and input level.
-    resetInput(0, false);
-    resetState();
+    setPrevInput(LOGIC_TIMESTAMP_BOGUS, false);
+    clearBuffer();
+    resetTrigger();
 }
 
 
@@ -96,7 +97,8 @@ ConditionProcessor::ConditionProcessor()
 void ConditionProcessor::setConfig(ConditionConfig &newConfig)
 {
     config = newConfig;
-    resetState();
+    clearBuffer();
+    resetTrigger();
 }
 
 
@@ -106,14 +108,19 @@ ConditionConfig ConditionProcessor::getConfig()
 }
 
 
-// State reset. This clears input and output and resets condition state.
-void ConditionProcessor::resetState()
+// Buffer reset. This clears queued output and sets past output to the "not asserted" level.
+void ConditionProcessor::clearBuffer()
 {
-    LogicFIFO::resetState();
+    LogicFIFO::clearBuffer();
 
     // Adjust idle output to reflect configuration.
     prevAcknowledgedLevel = !(config.outputActiveHigh);
+}
 
+
+// Condition-processing history reset.
+void ConditionProcessor::resetTrigger()
+{
     // Clear trigger processing state.
     nextStableTime = LOGIC_TIMESTAMP_BOGUS;
     nextReadyTime = LOGIC_TIMESTAMP_BOGUS;
@@ -211,7 +218,7 @@ L_PRINT("Pulsing " << (config.outputActiveHigh ? "high" : "low") << " from " << 
     }
 
     // Update the "last input seen" record.
-    resetInput(thisTime, thisLevel);
+    setPrevInput(thisTime, thisLevel);
 
     return hadTimeChange;
 }
