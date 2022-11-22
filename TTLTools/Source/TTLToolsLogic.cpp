@@ -246,10 +246,7 @@ void LogicFIFO::enqueueOutput(int64 newTime, bool newLevel, int newTag)
 MergerBase::MergerBase()
 {
     clearInputList();
-
-    // This timestamp might occur, but we have to initialize to something.
-    earliestTime = LOGIC_TIMESTAMP_BOGUS;
-    isValid = false;
+    clearMergeState();
 
     // Our output buffer was cleared by the LogicFIFO constructor, and we have no inputs yet, so nothing more to do.
 }
@@ -278,6 +275,14 @@ void MergerBase::clearBuffer()
     for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
         if (NULL != inputList[inIdx])
             (inputList[inIdx])->clearBuffer();
+}
+
+
+void MergerBase::clearMergeState()
+{
+    // This timestamp might occur, but we have to initialize to something.
+    earliestTime = LOGIC_TIMESTAMP_BOGUS;
+    isValid = false;
 }
 
 
@@ -314,6 +319,9 @@ bool MergerBase::advanceToNextTime()
 
     if (hadInput)
         isValid = true;
+
+// FIXME - Spammy diagnostics.
+//L_PRINT("advanceToNextTime found " << (hadInput ? "input" : "no input") << ", merge time is " << earliestTime << ".");
 
     // Done.
     return hadInput;
@@ -357,8 +365,14 @@ void MuxMerger::processPendingInputUntil(int64 newTime)
 
     // Scan over all inputs, pick the oldest, and process it.
     // Only do this up to the specified time.
+
     hadInput = inputTimeValid();
+    if (!hadInput)
+        hadInput = advanceToNextTime();
     currentTime = getCurrentInputTime();
+
+// FIXME - Spammy diagnostics.
+//L_PRINT("MuxMerger advancing to " << newTime << " with " << (hadInput ? "pending input" : "no input") << " at time " << currentTime << ".");
     while ( hadInput && (currentTime <= newTime) )
     {
         // We have pending inputs. Emit output events corresponding to the input events that just happened.
@@ -413,7 +427,13 @@ void LogicMerger::processPendingInputUntil(int64 newTime)
 
     // Scan over all inputs, pick the oldest, and process it.
     // Only do this up to the specified time.
+
     hadInput = inputTimeValid();
+    if (!hadInput)
+        hadInput = advanceToNextTime();
+
+// FIXME - Spammy diagnostics.
+//L_PRINT("LogicMerger advancing to " << newTime << " with " << (hadInput ? "pending input" : "no input") << " at time " << getCurrentInputTime() << ".");
     while ( hadInput && (getCurrentInputTime() <= newTime) )
     {
         // We have pending inputs. Build a new output event based on the last acknowledged inputs.

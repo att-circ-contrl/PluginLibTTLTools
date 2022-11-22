@@ -92,6 +92,7 @@ namespace TTLTools
 		void addInput(LogicFIFO* newInput, int idTag = 0);
 
 		void clearBuffer() override;
+		void clearMergeState();
 
 		// This finds the earliest timestamp in the still-pending input, and acknowledges all input up to that point. It returns false if there's no input.
 		bool advanceToNextTime();
