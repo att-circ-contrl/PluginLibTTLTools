@@ -1,5 +1,6 @@
 #include "TTLTools.h"
-#define LOGICDEBUGPREFIX "[TTLToolsLogic]  "
+#define LOGICDEBUGPREFIX "[TTLToolsLogic] "
+#define LOGICDEBUGIDVARIABLE debugID
 #include "TTLToolsDebug.h"
 
 using namespace TTLTools;
@@ -17,6 +18,7 @@ using namespace TTLTools;
 // Constructor
 LogicFIFO::LogicFIFO()
 {
+    debugID = LOGICDEBUG_DEFAULT_DEBUGID;
     clearBuffer();
     setPrevInput(LOGIC_TIMESTAMP_BOGUS, false);
 }
@@ -211,6 +213,13 @@ LogicFIFO* LogicFIFO::getCopyByValue()
     result->prevAcknowledgedTag = prevAcknowledgedTag;
 
     return result;
+}
+
+
+// This assigns an integer ID to be reported in debugging messages, to make them easier to tell apart.
+void LogicFIFO::setDebugID(int newID)
+{
+    debugID = newID;
 }
 
 

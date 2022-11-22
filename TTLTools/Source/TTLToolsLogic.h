@@ -57,6 +57,9 @@ namespace TTLTools
 		// Copy-by-value accessor. This is used for splitting output.
 		LogicFIFO* getCopyByValue();
 
+		// This makes debugging messages easier to tell apart.
+		void setDebugID(int newID);
+
 	protected:
 		CircBuf<int64,TTLTOOLSLOGIC_EVENT_BUF_SIZE> pendingOutputTimes;
 		CircBuf<bool,TTLTOOLSLOGIC_EVENT_BUF_SIZE> pendingOutputLevels;
@@ -69,6 +72,8 @@ namespace TTLTools
 		int64 prevAcknowledgedTime;
 		bool prevAcknowledgedLevel;
 		int prevAcknowledgedTag;
+
+		int debugID;
 
 		void enqueueOutput(int64 newTime, bool newLevel, int newTag);
 	};

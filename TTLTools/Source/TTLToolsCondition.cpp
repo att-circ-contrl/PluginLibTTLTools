@@ -1,5 +1,6 @@
 #include "TTLTools.h"
-#define LOGICDEBUGPREFIX "[TTLToolsCondition]  "
+#define LOGICDEBUGPREFIX "[TTLToolsCond] "
+#define LOGICDEBUGIDVARIABLE debugID
 #include "TTLToolsDebug.h"
 
 using namespace TTLTools;
@@ -207,6 +208,9 @@ bool ConditionProcessor::checkForTrigger(int64 thisTime, bool thisLevel)
             hadTimeChange = true;
 
             int64 thisDelay = rng.nextInt64();
+            // Avoid taking the modulo of a negative number, since some implementations give a negative result for that.
+            if (thisDelay < 0)
+                thisDelay = -(thisDelay + 1);
             thisDelay %= (1 + config.delayMaxSamps - config.delayMinSamps);
             thisDelay += config.delayMinSamps;
 // FIXME - Diagnostics. Still spammy.

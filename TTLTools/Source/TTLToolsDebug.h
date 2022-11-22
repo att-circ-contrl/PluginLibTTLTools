@@ -13,6 +13,8 @@
 
 // Diagnostic tattle macros.
 
+#define LOGICDEBUG_DEFAULT_DEBUGID (-1)
+
 // Report prefix string. This defaults to "[TTLTools]  ".
 #ifndef LOGICDEBUGPREFIX
 #define LOGICDEBUGPREFIX "[TTLTools]  "
@@ -27,7 +29,12 @@
 
 // Debug tattle output.
 // Flushing should already happen with std::endl, but force it anyways.
+// NOTE - Adding a switch to prepend instance IDs if desired.
+#ifdef LOGICDEBUGIDVARIABLE
+#define L_PRINT(x) L_DEBUG(std::cout << LOGICDEBUGPREFIX << "(" << LOGICDEBUGIDVARIABLE << ")  " << x << std::endl << std::flush;)
+#else
 #define L_PRINT(x) L_DEBUG(std::cout << LOGICDEBUGPREFIX << x << std::endl << std::flush;)
+#endif
 
 
 #endif
