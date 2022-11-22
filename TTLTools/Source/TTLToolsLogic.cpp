@@ -289,19 +289,49 @@ void MergerBase::clearBuffer()
 
 void MergerBase::clearMergeState()
 {
-    // This timestamp might occur, but we have to initialize to something.
-    earliestTime = LOGIC_TIMESTAMP_BOGUS;
-    isValid = false;
+    // Nothing to do.
 }
 
 
-// This finds the earliest timestamp in the still-pending input, and acknowledges all input up to that point. It returns false if there's no input.
-bool MergerBase::advanceToNextTime()
+// This acknowledges all input up to the specified timestamp.
+void MergerBase::advanceToTime(int64 newTime)
 {
-    bool hadInput;
+    // Acknowledge all events that are at or before this timestamp.
+    // Even if we picked the earliest timestamp, a source may still have several pending events at that time (zero-delay glitching).
+    for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
+        if (NULL != inputList[inIdx])
+        {
+            bool wasEarly = true;
+            while ( wasEarly && (inputList[inIdx]->hasPendingOutput()) )
+                if (inputList[inIdx]->getNextOutputTime() <= newTime)
+                    inputList[inIdx]->acknowledgeOutput();
+                else
+                    wasEarly = false;
+        }
+}
+
+
+bool MergerBase::havePendingInput()
+{
+    bool hadInput = false;
+
+    for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
+        if (NULL != inputList[inIdx])
+            if (inputList[inIdx]->hasPendingOutput())
+                hadInput = true;
+
+    // Done.
+    return hadInput;
+}
+
+
+// This finds the earliest timestamp in the still-pending input. It returns a bogus default value if there is no input, so check that first.
+int64 MergerBase::findNextInputTime()
+{
+    int64 earliestTime = LOGIC_TIMESTAMP_BOGUS;
+    bool hadInput = false;
 
     // Identify the oldest pending timestamp and record it.
-    hadInput = false;
     for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
         if (NULL != inputList[inIdx])
             if (inputList[inIdx]->hasPendingOutput())
@@ -311,41 +341,11 @@ bool MergerBase::advanceToNextTime()
                     earliestTime = thisTime;
                 hadInput = true;
             }
-
-    // Acknowledge events that match the earliest timestamp.
-    // NOTE - Tolerate the case where a single source has several pending inputs with that timestamp.
-    if (hadInput)
-        for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
-            if (NULL != inputList[inIdx])
-            {
-                bool wasEarly = true;
-                while ( wasEarly && (inputList[inIdx]->hasPendingOutput()) )
-                    if (inputList[inIdx]->getNextOutputTime() <= earliestTime)
-                        inputList[inIdx]->acknowledgeOutput();
-                    else
-                        wasEarly = false;
-            }
-
-    if (hadInput)
-        isValid = true;
-
 // FIXME - Spammy diagnostics.
-//L_PRINT("advanceToNextTime found " << (hadInput ? "input" : "no input") << ", merge time is " << earliestTime << ".");
+//L_PRINT("findNextInputTime found " << (hadInput ? "input" : "no input") << ", at reported time " << earliestTime << ".");
 
     // Done.
-    return hadInput;
-}
-
-
-int64 MergerBase::getCurrentInputTime()
-{
     return earliestTime;
-}
-
-
-bool MergerBase::inputTimeValid()
-{
-    return isValid;
 }
 
 
@@ -369,36 +369,34 @@ MuxMerger::MuxMerger()
 
 void MuxMerger::processPendingInputUntil(int64 newTime)
 {
-    bool hadInput;
-    int64 currentTime, thisTime;
-
     // Scan over all inputs, pick the oldest, and process it.
     // Only do this up to the specified time.
 
-    hadInput = inputTimeValid();
-    if (!hadInput)
-        hadInput = advanceToNextTime();
-    currentTime = getCurrentInputTime();
+    bool hadInput = havePendingInput();
+    int64 currentTime = findNextInputTime();
 
 // FIXME - Spammy diagnostics.
 //L_PRINT("MuxMerger advancing to " << newTime << " with " << (hadInput ? "pending input" : "no input") << " at time " << currentTime << ".");
+
     while ( hadInput && (currentTime <= newTime) )
     {
-        // We have pending inputs. Emit output events corresponding to the input events that just happened.
-         for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
-             if (NULL != inputList[inIdx])
-             {
-                 int64 thisTime = inputList[inIdx]->getLastAcknowledgedTime();
-                 if (thisTime == currentTime)
-                 {
-                     bool thisLevel = inputList[inIdx]->getLastAcknowledgedLevel();
-                     enqueueOutput(thisTime, thisLevel, inputTags[inIdx]);
-                 }
-             }
+        // Acknowledge pending inputs.
+        advanceToTime(currentTime);
 
-        // Advance to the oldest still-pending timestamp and acknowledge input to that point.
-        hadInput = advanceToNextTime();
-        currentTime = getCurrentInputTime();
+        // Emit output events corresponding to the input events that just happened.
+        for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
+            if (NULL != inputList[inIdx])
+            {
+                int64 thisTime = inputList[inIdx]->getLastAcknowledgedTime();
+                if (thisTime == currentTime)
+                {
+                    bool thisLevel = inputList[inIdx]->getLastAcknowledgedLevel();
+                    enqueueOutput(thisTime, thisLevel, inputTags[inIdx]);
+                }
+            }
+
+        hadInput = havePendingInput();
+        currentTime = findNextInputTime();
     }
 }
 
@@ -431,21 +429,23 @@ void LogicMerger::setMergeMode(LogicMerger::MergerType newMode)
 
 void LogicMerger::processPendingInputUntil(int64 newTime)
 {
-    bool hadInput;
     bool thisOutput;
 
     // Scan over all inputs, pick the oldest, and process it.
     // Only do this up to the specified time.
 
-    hadInput = inputTimeValid();
-    if (!hadInput)
-        hadInput = advanceToNextTime();
+    bool hadInput = havePendingInput();
+    int64 currentTime = findNextInputTime();
 
 // FIXME - Spammy diagnostics.
 //L_PRINT("LogicMerger advancing to " << newTime << " with " << (hadInput ? "pending input" : "no input") << " at time " << getCurrentInputTime() << ".");
-    while ( hadInput && (getCurrentInputTime() <= newTime) )
+
+    while ( hadInput && (currentTime <= newTime) )
     {
-        // We have pending inputs. Build a new output event based on the last acknowledged inputs.
+        // Acknowledge pending inputs.
+        advanceToTime(currentTime);
+
+        // Build a new output event based on the last acknowledged inputs.
         // Get the logical-AND or logical-OR of all acknowledged outputs.
         thisOutput = (mergeMode == mergeAnd);
         for (int inIdx = 0; inIdx < inputList.size(); inIdx++)
@@ -467,10 +467,10 @@ void LogicMerger::processPendingInputUntil(int64 newTime)
 
         // Emit this output.
         // FIXME - We're not checking to see if output actually _changed_, here.
-        enqueueOutput(earliestTime, thisOutput, 0);
+        enqueueOutput(currentTime, thisOutput, 0);
 
-        // Advance to the oldest still-pending timestamp and acknowledge input to that point.
-        hadInput = advanceToNextTime();
+        hadInput = havePendingInput();
+        currentTime = findNextInputTime();
     }
 }
 

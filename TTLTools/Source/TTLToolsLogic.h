@@ -90,25 +90,23 @@ namespace TTLTools
 		// Default destructor is fine.
 
 		// Accessors.
-		// NOTE - Do not call the LogicFIFO input accessors. Call advanceToNextTime() instead.
+		// NOTE - Do not call the LogicFIFO input accessors. Call findNextInputTime() and advanceToTime() instead.
+		virtual void advanceToTime(int64 newTime) override;
 
 		void clearInputList();
 		// Whether id tags are used as event tags is up to the child class.
 		void addInput(LogicFIFO* newInput, int idTag = 0);
 
 		void clearBuffer() override;
-		void clearMergeState();
+		virtual void clearMergeState();
 
-		// This finds the earliest timestamp in the still-pending input, and acknowledges all input up to that point. It returns false if there's no input.
-		bool advanceToNextTime();
-		int64 getCurrentInputTime();
-		bool inputTimeValid();
+		// This finds the earliest timestamp in the still-pending input. It returns a bogus default value if there is no input, so check that first.
+		bool havePendingInput();
+		int64 findNextInputTime();
 
 	protected:
 		Array<LogicFIFO*> inputList;
 		Array<int> inputTags;
-		int64 earliestTime;
-		bool isValid;
 	};
 
 
