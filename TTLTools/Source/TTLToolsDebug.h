@@ -5,7 +5,7 @@
 // Debugging switches.
 
 // Debug code enable/disable switch.
-#define LOGICWANTDEBUG 1
+#define LOGICWANTDEBUG 0
 
 // Warning enable switch (does not require debug enabled).
 #define LOGICWANTWARNINGS 1

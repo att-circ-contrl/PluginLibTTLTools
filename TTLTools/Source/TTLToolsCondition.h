@@ -65,6 +65,8 @@ namespace TTLTools
 
 		int64 nextStableTime;
 		int64 nextReadyTime;
+		bool edgeTriggerPrimed;
+		bool timesValid;
 
 		// This returns true if "nextStableTime" or "nextReadyTime" changed.
 		bool checkForTrigger(int64 thisTime, bool thisLevel);

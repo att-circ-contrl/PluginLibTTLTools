@@ -31,12 +31,12 @@ void ConditionConfig::clear()
 {
     // Set sane defaults.
 
-    desiredFeature = ConditionConfig::levelHigh;
+    desiredFeature = ConditionConfig::edgeRising;
 
     delayMinSamps = 0;
     delayMaxSamps = 0;
-    sustainSamps = 10;
-    deadTimeSamps = 100;
+    sustainSamps = 1000;
+    deadTimeSamps = 2000;
     deglitchSamps = 0;
 
     outputActiveHigh = true;
@@ -125,6 +125,8 @@ void ConditionProcessor::resetTrigger()
     // Clear trigger processing state.
     nextStableTime = LOGIC_TIMESTAMP_BOGUS;
     nextReadyTime = LOGIC_TIMESTAMP_BOGUS;
+    edgeTriggerPrimed = false;
+    timesValid = false;
 }
 
 
@@ -168,15 +170,29 @@ bool ConditionProcessor::checkForTrigger(int64 thisTime, bool thisLevel)
     bool haveRising = (thisLevel && (!prevInputLevel));
     bool haveFalling = ((!thisLevel) && prevInputLevel);
 
-    // Figure out if the signal is stable and if we're still in dead time.
-    bool isStable = ( thisTime >= nextStableTime );
-    bool isReady = ( thisTime >= nextReadyTime );
-
     // Record any edge that we just saw.
+    // This pushes the stable time forward.
     if (haveRising || haveFalling)
     {
         nextStableTime = thisTime + config.deglitchSamps;
         hadTimeChange = true;
+    }
+
+    // Figure out if the signal is stable and if we're still in dead time.
+    bool isStable = ( thisTime >= nextStableTime );
+    bool isReady = ( thisTime >= nextReadyTime );
+
+    // Update the "last input seen" record.
+    setPrevInput(thisTime, thisLevel);
+
+    // If we saw an edge outside of deadtime, and want that edge, record it.
+    // Seeing the wrong type of edge un-primes the trigger. We should have responded to it by now if it was stable for long enough.
+    if (isReady && (haveRising || haveFalling))
+    {
+        if (ConditionConfig::edgeRising == config.desiredFeature)
+            edgeTriggerPrimed = haveRising;
+        else if (ConditionConfig::edgeFalling == config.desiredFeature)
+            edgeTriggerPrimed = haveFalling;
     }
 
 // FIXME - Diagnostics. Very spammy!
@@ -189,13 +205,16 @@ bool ConditionProcessor::checkForTrigger(int64 thisTime, bool thisLevel)
         switch (config.desiredFeature)
         {
         case ConditionConfig::levelHigh:
-            wantAssert = thisLevel; break;
+            wantAssert = thisLevel;
+            break;
         case ConditionConfig::levelLow:
-            wantAssert = !thisLevel; break;
+            wantAssert = !thisLevel;
+            break;
         case ConditionConfig::edgeRising:
-            wantAssert = haveRising; break;
         case ConditionConfig::edgeFalling:
-            wantAssert = haveFalling; break;
+            wantAssert = edgeTriggerPrimed;
+            edgeTriggerPrimed = false;
+            break;
         default:
             break;
         }
@@ -204,7 +223,22 @@ bool ConditionProcessor::checkForTrigger(int64 thisTime, bool thisLevel)
         {
             // We're past the dead time from our previous trigger; schedule a new output pulse.
 
-            nextReadyTime = thisTime + config.deadTimeSamps;
+            // Figure out when the trigger actually was.
+            // Stable time is tied to the most recent edge seen. If we had an edge trigger primed, the trigger was the most recent edge.
+            int64 triggerTime = nextStableTime - config.deglitchSamps;
+            // This only happens for level triggers. Edge trigger asserts can only generate from edges that are in the ready period.
+            if (triggerTime < nextReadyTime)
+                triggerTime = nextReadyTime;
+
+            // Avoid generating warnings on startup. We still want warnings if a bug causes time travel, so check the initialization flag.
+            if (!timesValid)
+            {
+                int64 earliestTime = thisTime - config.deglitchSamps;
+                if (triggerTime < earliestTime)
+                    triggerTime = earliestTime;
+            }
+
+            nextReadyTime = triggerTime + config.deadTimeSamps;
             hadTimeChange = true;
 
             int64 thisDelay = rng.nextInt64();
@@ -213,16 +247,17 @@ bool ConditionProcessor::checkForTrigger(int64 thisTime, bool thisLevel)
                 thisDelay = -(thisDelay + 1);
             thisDelay %= (1 + config.delayMaxSamps - config.delayMinSamps);
             thisDelay += config.delayMinSamps;
-// FIXME - Diagnostics. Still spammy.
-L_PRINT("Pulsing " << (config.outputActiveHigh ? "high" : "low") << " from " << (thisTime + thisDelay) << " to " << (thisTime + thisDelay + config.sustainSamps) << " (trigger " << thisTime << ").");
 
-            enqueueOutput(thisTime + thisDelay, config.outputActiveHigh, 0);
-            enqueueOutput(thisTime + thisDelay + config.sustainSamps, !(config.outputActiveHigh), 0);
+// FIXME - Diagnostics. Still spammy.
+L_PRINT("Pulsing " << (config.outputActiveHigh ? "high" : "low") << " from " << (triggerTime + thisDelay) << " to " << (triggerTime + thisDelay + config.sustainSamps) << " (trigger " << triggerTime << ", now " << thisTime << ").");
+
+            enqueueOutput(triggerTime + thisDelay, config.outputActiveHigh, 0);
+            enqueueOutput(triggerTime + thisDelay + config.sustainSamps, !(config.outputActiveHigh), 0);
         }
     }
 
-    // Update the "last input seen" record.
-    setPrevInput(thisTime, thisLevel);
+    if (hadTimeChange)
+        timesValid = true;
 
     return hadTimeChange;
 }
