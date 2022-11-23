@@ -237,8 +237,8 @@ void LogicFIFO::enqueueOutput(int64 newTime, bool newLevel, int newTag)
     // NOTE - This may give false alarms if input wasn't initialized (reset) before enqueueOutput was called!
     if (prevInputTime >= newTime)
     {
-// FIXME - This can get spammy if there's a bug that trips it!
-        L_PRINT(".. WARNING - FIFO event enqueued out of order (prev time " << prevInputTime << ", new " << newTime << ").");
+        // FIXME - This can get spammy if there's a bug that trips it!
+        L_WARN(".. WARNING - FIFO event enqueued out of order (prev time " << prevInputTime << ", new " << newTime << ").");
     }
 }
 

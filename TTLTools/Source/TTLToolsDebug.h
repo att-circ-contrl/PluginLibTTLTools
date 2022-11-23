@@ -7,6 +7,9 @@
 // Debug code enable/disable switch.
 #define LOGICWANTDEBUG 1
 
+// Warning enable switch (does not require debug enabled).
+#define LOGICWANTWARNINGS 1
+
 // Condition bypass switch. Set this to make conditional triggers act like FIFOs.
 #define LOGICDEBUG_BYPASSCONDITION 0
 
@@ -34,6 +37,16 @@
 #define L_PRINT(x) L_DEBUG(std::cout << LOGICDEBUGPREFIX << "(" << LOGICDEBUGIDVARIABLE << ")  " << x << std::endl << std::flush;)
 #else
 #define L_PRINT(x) L_DEBUG(std::cout << LOGICDEBUGPREFIX << x << std::endl << std::flush;)
+#endif
+
+// Warning tattle output.
+// Flushing should already happen with std::endl, but force it anyways.
+// NOTE - Adding a switch to prepend instance IDs if desired.
+#define L_WARNCODE(x) do { x } while(false);
+#ifdef LOGICDEBUGIDVARIABLE
+#define L_WARN(x) L_WARNCODE(std::cout << LOGICDEBUGPREFIX << "(" << LOGICDEBUGIDVARIABLE << ")  " << x << std::endl << std::flush;)
+#else
+#define L_WARN(x) L_WARNCODE(std::cout << LOGICDEBUGPREFIX << x << std::endl << std::flush;)
 #endif
 
 
