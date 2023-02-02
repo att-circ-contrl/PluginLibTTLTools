@@ -12,7 +12,9 @@
 
 namespace TTLTools
 {
-	template <class datatype_t,size_t bufsize> class COMMON_LIB CircBuf
+	// NOTE - This should NOT use the "COMMON_LIB" macro.
+	// That's for object code that's linked from shared libraries. Template instances rebuild the object code rather than importing it.
+	template <class datatype_t,size_t bufsize> class CircBuf
 	{
 	public:
 		CircBuf();
